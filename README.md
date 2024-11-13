@@ -70,7 +70,7 @@ agent <- Agent$new(
 )
 ```
 
-### Tools
+### Tools (Currently supports 6 out-of-box data analysis and visualization tools)
 ```r
 # Add tools to extend functionality
 data_analysis_tool <- DataAnalysisTool$new()
