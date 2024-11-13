@@ -1,7 +1,7 @@
 # aigenflow: An R Framework To Build LLM Applications, Agents, Tools, and Automated Workstreams
 
 ## Description
-aigenflow is a comprehensive R package designed to seamlessly integrate OpenAI's GPT-4 and other language model-based agents into your R environment. By providing a structured, object-oriented framework, it simplifies AI integration, enables intelligent agents, maintains conversational context, and extends functionalities through highly customizable tools. The package is built to empower users with advanced natural language processing capabilities, workflow automation, and AI-driven decision-making directly within R, making it an essential tool for developers, data scientists, and researchers.
+aigenflow is a comprehensive R agentic and workflow framwork designed to seamlessly integrate OpenAI's GPT-4 and other LLMs into your R environment. By providing a structured, object-oriented architecture, it simplifies AI integration, enables intelligent agents, maintains conversational context, and extends functionalities through highly customizable tools. The package is built to empower users with advanced natural language processing capabilities, workflow automation, and AI-driven decision-making directly within R, making it an essential tool for developers, data scientists, and researchers.
 
 ## Table of Contents
 - [Features](#features)
@@ -162,3 +162,6 @@ We welcome contributions! Please follow these steps:
 3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+## License
+Still researching liceence modes.
