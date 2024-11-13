@@ -1,0 +1,34 @@
+Package: aigenflow
+Title: R Framework for Language Models and Intelligent Agents
+Version: 0.1.0
+Date: 2024-11-12
+Authors@R: person(given = "Margar",
+           family = "Harutyunyan",
+	   role = c("aut", "cre"),
+           email = "mharu997@gmail.com")
+Description: A comprehensive R framework for working with language models and 
+    intelligent agents. This package provides tools for integrating with 
+    language models (like OpenAI's GPT), managing conversations, performing 
+    data analysis, and creating automated workflows. Features include a 
+    modular architecture for language model integration, conversation memory 
+    management, extensible tool system, and chain-based workflow automation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    R6,
+    httr,
+    jsonlite,
+    ggplot2
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+URL: https://github.com/mharu997/aigenflow
+BugReports: https://github.com/mharu997/aigenflow/issues
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+Depends: 
+    R (>= 4.0.2)
