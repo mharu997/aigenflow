@@ -1,7 +1,7 @@
-# aigenflow: R Package for AI Language Model Integration
+# aigenflow: An R Framework To Build LLM Applications, Agents, Tools, and Automated Workstreams
 
 ## Description
-aigenflow is a comprehensive R package designed to seamlessly integrate OpenAI's GPT-4 and other language models into your R environment. The package provides a structured, object-oriented framework that simplifies AI integration, enables intelligent agents, maintains conversational context, and extends functionalities through customizable tools.
+aigenflow is a comprehensive R package designed to seamlessly integrate OpenAI's GPT-4 and other language model-based agents into your R environment. By providing a structured, object-oriented framework, it simplifies AI integration, enables intelligent agents, maintains conversational context, and extends functionalities through highly customizable tools. The package is built to empower users with advanced natural language processing capabilities, workflow automation, and AI-driven decision-making directly within R, making it an essential tool for developers, data scientists, and researchers.
 
 ## Table of Contents
 - [Features](#features)
@@ -14,8 +14,8 @@ aigenflow is a comprehensive R package designed to seamlessly integrate OpenAI's
 - [License](#license)
 
 ## Features
-- **Simplified API Integration**: Abstract classes for seamless language model integration
-- **State Management**: Built-in conversation memory system
+- **Simplified API Integration**: Abstract LLM and Agent classes with seamless language model integrations
+- **State Management**: Built-in conversation memory system for Agents
 - **Modular Tool Framework**: Extensible architecture for custom tools
 - **Workflow Automation**: Chain and Step classes for complex operations
 - **Advanced Analytics**: AI-powered data interpretation and report generation
