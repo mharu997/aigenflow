@@ -1,57 +1,121 @@
-Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")
+# aigenflow: R Package for AI Language Model Integration
 
+## Description
+aigenflow is a comprehensive R package designed to seamlessly integrate OpenAI's GPT-4 and other language models into your R environment. The package provides a structured, object-oriented framework that simplifies AI integration, enables intelligent agents, maintains conversational context, and extends functionalities through customizable tools.
+
+## Table of Contents
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Components](#core-components)
+- [Examples](#examples)
+- [Applications](#applications)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+- **Simplified API Integration**: Abstract classes for seamless language model integration
+- **State Management**: Built-in conversation memory system
+- **Modular Tool Framework**: Extensible architecture for custom tools
+- **Workflow Automation**: Chain and Step classes for complex operations
+- **Advanced Analytics**: AI-powered data interpretation and report generation
+- **Conversation Context**: Maintains context across multiple interactions
+
+## Installation
+```r
+# Install from CRAN
+install.packages("aigenflow")
+
+# Or install the development version from GitHub
+# install.packages("devtools")
+devtools::install_github("username/aigenflow")
+```
+
+## Quick Start
+```r
+# Load the package
 library(aigenflow)
 
-# Create an OpenAI model instance
-openai_model <- OpenAIModel$new(
-  model_name = "gpt-4"
-)
+# Set your OpenAI API key
+Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")
 
-# Create an agent with the OpenAI model
-agent <- Agent$new(model = openai_model)
+# Initialize the OpenAI model
+openai_model <- OpenAIModel$new(model_name = "gpt-4")
 
-# Add a calculator tool to the agent
-calculator_tool <- CalculatorTool$new()
-agent$add_tool(calculator_tool)
+# Create an agent with memory
+agent <- Agent$new(model = openai_model, memory = ConversationMemory$new())
 
-# Start a conversation with the agent
+# Start chatting!
 response <- agent$chat(
-  user_input = "What is random forest and when should I use it?",
-  system_prompt = "You are a data science expert specializing in machine learning.",
-  context_window = 5,
-  temperature = 0.7
+  user_input = "Can you explain the bias-variance tradeoff?",
+  system_prompt = "You are a statistics expert.",
+  context_window = 5
 )
-cat("Assistant:", response, "\n")
+```
 
-# Use the Calculator tool through the agent
-calculation_result <- agent$use_tool("Calculator", "2 + 2 * 5")
-cat("Calculator Result:", calculation_result, "\n")
+## Core Components
 
+### Language Models
+```r
+# Initialize different language models
+openai_model <- OpenAIModel$new(model_name = "gpt-4")
+```
 
-########################################
-# Example Usage: Advanced Agent Capabilities  with iris dataset
-########################################
-
-# This section demonstrates more advanced usage of the agent and tools for tasks such as
-# data analysis and report generation.
-
-# Create agents
-data_agent <- Agent$new(model = openai_model)  # Initializes an agent for data analysis.
-data_agent$add_tool(DataAnalysisTool$new())   # Adds the DataAnalysis tool to the agent.
-
-writer_agent <- Agent$new(model = openai_model)  # Initializes a separate agent for writing tasks.
-
-
-# Demonstrates how the summarize_and_report function can be applied to a dataset like iris.
-results <- summarize_and_report(
-  iris,  # The classic iris dataset used for this example.
-  "What are the main patterns and relationships between iris flower measurements?"  # Custom question for analysis.
+### Agents with Memory
+```r
+# Create an agent with conversation memory
+agent <- Agent$new(
+  model = openai_model,
+  memory = ConversationMemory$new()
 )
+```
 
-# Print the results
-cat("Raw Analysis:\n", results$raw_analysis, "\n\n")         # Prints the raw data analysis.
-cat("Data Interpretation:\n", results$interpretation, "\n\n") # Prints the interpreted insights.
-cat("Final Report:\n", results$final_report, "\n")           # Prints the final user-friendly report.
+### Tools
+```r
+# Add tools to extend functionality
+data_analysis_tool <- DataAnalysisTool$new()
+agent$add_tool(data_analysis_tool)
+```
+
+### Workflow Chains
+```r
+# Create a data processing workflow
+workflow <- Chain$new(steps = list(
+  load_data_step,
+  clean_data_step,
+  analyze_data_step
+))
+```
+
+## Examples
+
+### Creating a Data Analysis Assistant
+```r
+# Initialize the assistant
+data_agent <- Agent$new(model = openai_model)
+data_agent$add_tool(DataAnalysisTool$new())
+
+# Analyze data
+response <- data_agent$chat(
+  user_input = "What trends can you identify in the sales data?",
+  system_prompt = "You are a data analyst specializing in sales trends.",
+  context_window = 5
+)
+```
 
 
+## Applications
+The package enables building various applications including:
+1. **Intelligent Virtual Assistants**: For data analysis and interpretation
+2. **Automated Report Generation**: Create comprehensive reports from data
+3. **Educational Chatbots**: Interactive learning and tutoring
+4. **Smart Customer Support**: Handle inquiries and troubleshooting
+5. **Data Pipeline Management**: Automate complex data processing workflows
 
+## Contributing
+We welcome contributions! Please follow these steps:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
