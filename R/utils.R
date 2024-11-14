@@ -13,13 +13,16 @@ library(ggplot2)
 
 # This function demonstrates how agents with specialized tools can collaborate.
 # It performs data analysis using the data agent and generates a summary report using the writer agent.
-summarize_and_report <- function(data, data_question = "What are the key insights from this data?") {
+summarize_and_report <- function(model, data, data_question = "What are the key insights from this data?") {
   # Purpose: Analyzes data using the data agent and generates a user-friendly report.
   # Parameters:
+  # - agent: The LLM based agent to run the analysis
   # - data: The dataset to be analyzed.
   # - data_question: A question to guide the interpretation of the analysis.
   
   # Step 1: Use the DataAnalysis tool to perform initial analysis.
+  data_agent <- Agent$new(model = model)  # Initializes an agent for data analysis.
+  data_agent <- data_agent$add_tool(DataAnalysisTool$new())
   raw_analysis <- data_agent$use_tool("DataAnalysis", data)  # Retrieves raw statistics about the data.
   
   # Step 2: Interpret the analysis results using the data agent.
@@ -34,6 +37,7 @@ summarize_and_report <- function(data, data_question = "What are the key insight
   )
   
   # Step 3: Use the writing agent to convert the interpretation into a clear report.
+  writer_agent <- Agent$new(model = model) 
   final_report <- writer_agent$chat(
     user_input = paste(
       "Here is a technical analysis of some data:\n\n",
