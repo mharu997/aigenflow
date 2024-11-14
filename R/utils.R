@@ -54,3 +54,57 @@ summarize_and_report <- function(model, data, data_question = "What are the key 
     final_report = final_report         # Final user-friendly report from the writer agent.
   ))
 }
+
+
+
+
+summarize_and_report <- function(model, data, data_question = "What are the key insights from this data?") {
+  data_agent <- initialize_data_agent(model)
+  raw_analysis <- perform_data_analysis(data_agent, data)
+  interpretation <- interpret_analysis_results(data_agent, raw_analysis, data_question)
+  final_report <- generate_final_report(model, interpretation)
+  
+  return(list(
+    raw_analysis = raw_analysis,
+    interpretation = interpretation,
+    final_report = final_report
+  ))
+}
+
+initialize_data_agent <- function(model) {
+  data_agent <- Agent$new(model = model)
+  data_agent <- data_agent$add_tool(DataAnalysisTool$new())
+  return(data_agent)
+}
+
+perform_data_analysis <- function(data_agent, data) {
+  raw_analysis <- data_agent$use_tool("DataAnalysis", data)
+  return(raw_analysis)
+}
+
+interpret_analysis_results <- function(data_agent, raw_analysis, data_question) {
+  interpretation <- data_agent$chat(
+    user_input = paste(
+      "Here is the statistical analysis of the data:\n\n",
+      raw_analysis,
+      "\n\nBased on these statistics, ",
+      data_question
+    ),
+    system_prompt = "You are a data analyst. Interpret these statistics and provide key insights."
+  )
+  return(interpretation)
+}
+
+generate_final_report <- function(model, interpretation) {
+  writer_agent <- Agent$new(model = model)
+  final_report <- writer_agent$chat(
+    user_input = paste(
+      "Here is a technical analysis of some data:\n\n",
+      interpretation,
+      "\n\nPlease convert this into a clear, engaging summary for a general audience."
+    ),
+    system_prompt = "You are a technical writer. Create clear, engaging summaries of technical analyses."
+  )
+  return(final_report)
+}
+
