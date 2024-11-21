@@ -1,4 +1,10 @@
-# *AIGenFlow* by *KatmAI Labs*: An R Framework To Build LLM Applications, Agents, Tools, and Automated Workstreams
+# *AIGenFlow* by *KatmAI Labs*: A Cutting-Edge R Framework for Creating, Managing, and Scaling LLM Agents, Teams, and Applications
+
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4acfac91-9b2d-4222-92c5-f5e4a7a9087b" alt="image">
+</p>
+
 
 ## Description
 *AIGenFlow* is a user-friendly, comprehensive R-based framework that simplifies integrating OpenAI’s GPT-4 and other Large Language Models (LLMs) into your R environment. Designed with ease of use in mind, it enables you to create intelligent agents and orchestrate workflows with just a few lines of code, making advanced AI capabilities accessible to developers, data scientists, and researchers across diverse fields.
