@@ -4,12 +4,12 @@
 AIGenFlow is a user-friendly, comprehensive R-based framework that simplifies integrating OpenAI’s GPT-4 and other Large Language Models (LLMs) into your R environment. Designed with ease of use in mind, it enables you to create intelligent agents and orchestrate workflows with just a few lines of code, making advanced AI capabilities accessible to developers, data scientists, and researchers across diverse fields.
 
 ### Key Features:
-	•	Simplicity and Versatility: Build agents and workflows effortlessly while leveraging a highly intuitive and structured, object-oriented architecture. AIGenFlow ensures a seamless user experience, even for complex tasks.
-	•	Powerful AI Integration: Seamlessly connect with LLMs like GPT-4 and other LLMs to enable natural language processing, conversational as well as execution agents, and AI-driven decision-making directly within R.
-	•	Customizable Tools: Extend agent functionalities and workflows with highly customizable tools invoking agentic actions, ensuring the framework meets to your unique needs.
-	•	Constantly Evolving: Though experimental, AIGenFlow is regularly updated to enhance its functionality, versatility, and usability, ensuring it remains a cutting-edge solution.
+- **Simplicity and Versatility:** Build agents and workflows effortlessly while leveraging a highly intuitive and structured, object-oriented architecture. *AIGenFlow* ensures a seamless user experience, even for complex tasks.
+- **Powerful AI Integration:** Seamlessly connect with LLMs like GPT-4 and other large language models to enable natural language processing, conversational agents, and execution agents, all within R.
+- **Customizable Tools:** Extend agent functionalities and workflows with highly customizable tools for invoking agentic actions, ensuring the framework adapts to your unique needs.
+- **Constantly Evolving:** Though experimental, *AIGenFlow* is regularly updated to enhance its functionality, versatility, and usability, ensuring it remains a cutting-edge solution.
 
-Whether you’re automating workflows, building conversational agents, or unlocking insights through AI-driven solutions, AIGenFlow empowers you to innovate and streamline your projects—all within the familiar R environment.
+Whether you’re automating workflows, building conversational agents, or unlocking insights through AI-driven solutions, *AIGenFlow* empowers you to innovate and streamline your projects—all within the familiar R environment.
 
 ## Table of Contents
 - [Features](#features)
