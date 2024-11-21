@@ -1,103 +1,292 @@
 library(R6)          
 library(httr)        
 library(jsonlite) 
-library(ggplot2) 
 
 #' @title Agent Class
 #' @description Agent class for an agent that interacts with language models and tools.
 #' @export
-########################################
-# Agent Class
-########################################
-
-# This class represents an agent that interacts with language models and tools.
-# The agent maintains conversation memory and integrates tools for additional functionality.
-Agent <- R6Class(
-  "Agent",  # Class name representing the agent.
+aigen_Agent <- R6Class(
+  "aigen_Agent",
   public = list(
-    # Constructor
+    #' @description Initialize a new agent with a language model and optional memory and tools
     initialize = function(model, memory = NULL, tools = list()) {
-      # Purpose: Initializes the agent with a language model, optional memory, and a set of tools.
-      # Parameters:
-      # - model: An instance of a language model (e.g., OpenAIModel).
-      # - memory: Optional; an instance of memory (e.g., ConversationMemory).
-      # - tools: A list of tools that the agent can use.
+      if (!inherits(model, "aigen_LanguageModel")) {
+        stop("model must be an instance of aigen_LanguageModel")
+      }
       
-      private$model <- model  # Assigns the language model to a private variable.
-      private$memory <- if (is.null(memory)) ConversationMemory$new() else memory  # Initializes memory.
-      private$tools <- tools  # Stores the list of tools.
+      if (length(tools) > 0) {
+        if (is.null(names(tools))) {
+          stop("tools must be a named list of functions")
+        }
+        for (tool_name in names(tools)) {
+          if (!is.function(tools[[tool_name]])) {
+            stop(sprintf("Tool '%s' must be a function", tool_name))
+          }
+        }
+      }
+      
+      private$model <- model
+      private$memory <- if (is.null(memory)) ConversationMemory$new() else memory
+      private$tools <- tools
+      private$tool_knowledge <- new.env(parent = emptyenv())
+      
+      if (length(tools) > 0) {
+        for (name in names(tools)) {
+          private$analyze_tool(name)
+        }
+      }
     },
     
-    # Chat method to interact with the agent
-    chat = function(user_input, system_prompt = NULL, context_window = 5, temperature = 0.7) {
-      # Purpose: Processes user input, generates a response using the model, and updates the memory.
-      # Parameters:
-      # - user_input: The user's input message or query.
-      # - system_prompt: Optional; a system-level instruction for the agent (e.g., "You are a data analyst.").
-      # - context_window: The number of recent messages to include in the context.
-      # - temperature: Controls the randomness/creativity of the model's response.
+    chat = function(user_input, system_prompt = NULL, context_window = 5) {
+      if (!is.character(user_input) || length(user_input) != 1) {
+        stop("user_input must be a single character string")
+      }
+      if (!is.null(system_prompt) && (!is.character(system_prompt) || length(system_prompt) != 1)) {
+        stop("system_prompt must be NULL or a single character string")
+      }
+      if (!is.numeric(context_window) || context_window < 1) {
+        stop("context_window must be a positive number")
+      }
       
-      private$memory$add_message("user", user_input)  # Adds the user's input to conversation memory.
-      messages <- self$build_prompt(system_prompt, context_window)  # Builds a prompt including context.
-      response <- private$model$generate(messages, temperature = temperature)  # Generates a response using the model.
-      private$memory$add_message("assistant", response)  # Adds the model's response to conversation memory.
-      return(response)  # Returns the generated response.
+      private$memory$add_message("user", user_input)
+      
+      # If we have tools, try to use them first
+      tool_response <- NULL
+      if (length(private$tools) > 0) {
+        tool_result <- private$try_tool_execution(user_input)
+        if (!is.null(tool_result)) {
+          tool_response <- sprintf("Used %s: %s", 
+                                   tool_result$tool_name, 
+                                   as.character(tool_result$result))
+          
+          # For concise requests, just return the tool response
+          if (!is.null(system_prompt) && 
+              grepl("concise", tolower(system_prompt), fixed = TRUE)) {
+            private$memory$add_message("assistant", tool_response)
+            return(tool_response)
+          }
+        }
+      }
+      
+      # Build system prompt with tool context
+      enhanced_system_prompt <- if (!is.null(system_prompt)) {
+        paste(system_prompt, "\n\n", private$build_tool_context())
+      } else {
+        private$build_tool_context()
+      }
+      
+      messages <- self$build_prompt(enhanced_system_prompt, context_window)
+      
+      # Generate response based on whether a tool was used
+      final_prompt <- if (!is.null(tool_response)) {
+        sprintf(
+          "%s\n\nI've already performed this calculation: %s\nPlease provide a complete response addressing all aspects of the user's request, incorporating this result.",
+          messages$prompt,
+          tool_response
+        )
+      } else {
+        messages$prompt
+      }
+      
+      response <- private$model$generate(
+        prompt = final_prompt,
+        system_message = messages$system
+      )
+      
+      private$memory$add_message("assistant", response)
+      return(response)
     },
     
-    # Build the prompt with system prompt and conversation history
     build_prompt = function(system_prompt = NULL, context_window = 5) {
-      # Purpose: Constructs a prompt by combining system instructions and recent conversation history.
-      # Parameters:
-      # - system_prompt: Optional; a system-level instruction for the agent.
-      # - context_window: The number of recent messages to include in the context.
-      
-      messages <- list()  # Initializes an empty list for the prompt.
-      
-      # Adds the system prompt to the messages list if provided.
-      if (!is.null(system_prompt)) {
-        messages <- append(messages, list(list(role = "system", content = system_prompt)))
-      }
-      
-      # Retrieves recent conversation history and adds it to the prompt.
       recent_messages <- private$memory$get_recent_messages(context_window * 2)
-      for (msg in recent_messages) {
-        messages <- append(messages, list(list(role = msg$role, content = msg$content)))
-      }
-      return(messages)  # Returns the complete prompt.
-    },
-    
-    # Add a tool to the agent
-    add_tool = function(tool) {
-      # Purpose: Adds a tool to the agent's set of available tools.
-      # Parameters:
-      # - tool: An instance of a tool to be added (e.g., CalculatorTool).
+      prompt <- paste(sapply(recent_messages, function(msg) {
+        sprintf("%s: %s", toupper(msg$role), msg$content)
+      }), collapse = "\n")
       
-      private$tools[[tool$name]] <- tool  # Adds the tool to the private tools list, keyed by its name.
+      return(list(
+        prompt = prompt,
+        system = system_prompt
+      ))
     },
     
-    # Use a tool by name
+    add_tool = function(name, fn) {
+      if (!is.character(name) || length(name) != 1) {
+        stop("name must be a single character string")
+      }
+      if (!is.function(fn)) {
+        stop("fn must be a function")
+      }
+      private$tools[[name]] <- fn
+      private$analyze_tool(name)
+    },
+    
     use_tool = function(tool_name, ...) {
-      # Purpose: Executes a specific tool by its name.
-      # Parameters:
-      # - tool_name: The name of the tool to execute.
-      # - ...: Additional arguments required by the tool.
-      
-      tool <- private$tools[[tool_name]]  # Retrieves the tool from the list by its name.
-      if (is.null(tool)) {
-        stop(paste("Tool", tool_name, "not found"))  # Raises an error if the tool is not found.
+      fn <- private$tools[[tool_name]]
+      if (is.null(fn)) {
+        stop(sprintf("Tool '%s' not found", tool_name))
       }
-      return(tool$run(...))  # Executes the tool's `run` method and returns the result.
+      
+      tryCatch({
+        result <- do.call(fn, list(...))
+        
+        if (exists(tool_name, envir = private$tool_knowledge)) {
+          tool_info <- get(tool_name, envir = private$tool_knowledge)
+          tool_info$usage_count <- tool_info$usage_count + 1
+          tool_info$last_used <- Sys.time()
+          assign(tool_name, tool_info, envir = private$tool_knowledge)
+        }
+        
+        return(result)
+      }, error = function(e) {
+        stop(sprintf("Error executing %s: %s", tool_name, e$message))
+      })
     },
     
-    # Clear the conversation memory
+    list_tools = function() {
+      if (length(private$tools) == 0) {
+        return(list())
+      }
+      
+      tool_info <- lapply(names(private$tools), function(name) {
+        knowledge <- get(name, envir = private$tool_knowledge)
+        list(
+          name = name,
+          description = knowledge$description,
+          usage_count = knowledge$usage_count,
+          last_used = knowledge$last_used
+        )
+      })
+      
+      names(tool_info) <- names(private$tools)
+      return(tool_info)
+    },
+    
     clear_memory = function() {
-      # Purpose: Clears all stored conversation history from memory.
-      private$memory$clear_memory()  # Invokes the memory's `clear_memory` method.
+      private$memory$clear_memory()
+    },
+    
+    get_tool_stats = function() {
+      if (length(private$tools) == 0) {
+        return(data.frame())
+      }
+      
+      stats <- do.call(rbind, lapply(names(private$tools), function(name) {
+        knowledge <- get(name, envir = private$tool_knowledge)
+        data.frame(
+          tool_name = name,
+          usage_count = knowledge$usage_count,
+          last_used = as.character(knowledge$last_used),
+          stringsAsFactors = FALSE
+        )
+      }))
+      
+      return(stats)
     }
   ),
+  
   private = list(
-    model = NULL,  # Private variable to store the language model.
-    memory = NULL,  # Private variable to store the conversation memory.
-    tools = NULL  # Private variable to store the list of tools.
+    model = NULL,           
+    memory = NULL,          
+    tools = NULL,           
+    tool_knowledge = NULL,  
+    
+    analyze_tool = function(tool_name) {
+      fn <- private$tools[[tool_name]]
+      params <- names(formals(fn))
+      body_text <- deparse(body(fn))
+      
+      analysis_prompt <- sprintf(
+        "Analyze this R function:\nName: %s\nParameters: %s\nBody: %s\n\nProvide a clear, concise description of what this function does and how to use it.",
+        tool_name,
+        paste(params, collapse = ", "),
+        paste(body_text, collapse = " ")
+      )
+      
+      understanding <- private$model$generate(
+        prompt = analysis_prompt,
+        system_message = "You are an expert R programmer. Analyze this function concisely."
+      )
+      
+      assign(tool_name, list(
+        description = understanding,
+        params = params,
+        usage_count = 0,
+        last_used = NULL
+      ), envir = private$tool_knowledge)
+    },
+    
+    try_tool_execution = function(user_input) {
+      tool_context <- private$build_tool_context()
+      decision_prompt <- sprintf(
+        "Given the user input: '%s'\n\nAvailable tools:\n%s\n\nRespond in this exact format if a tool should be used:\nUSE_TOOL|tool_name|param1=value1,param2=value2\nOr respond with NO_TOOL if no tool is appropriate.\nOnly respond with the format above, no other text.",
+        user_input,
+        tool_context
+      )
+      
+      decision <- private$model$generate(
+        prompt = decision_prompt,
+        system_message = "You are a tool execution planner. Only decide if and how to use available tools."
+      )
+      
+      if (startsWith(decision, "USE_TOOL|")) {
+        parts <- strsplit(decision, "\\|")[[1]]
+        tool_name <- parts[2]
+        params_str <- parts[3]
+        
+        if (tool_name %in% names(private$tools)) {
+          params <- lapply(strsplit(params_str, ",")[[1]], function(p) {
+            param_parts <- strsplit(p, "=")[[1]]
+            if (length(param_parts) == 2) {
+              val <- tryCatch({
+                eval(parse(text = param_parts[2]))
+              }, error = function(e) param_parts[2])
+              return(setNames(list(val), param_parts[1]))
+            }
+            return(NULL)
+          })
+          params <- do.call(c, params)
+          
+          result <- tryCatch({
+            tool_result <- do.call(private$tools[[tool_name]], params)
+            
+            tool_info <- get(tool_name, envir = private$tool_knowledge)
+            tool_info$usage_count <- tool_info$usage_count + 1
+            tool_info$last_used <- Sys.time()
+            assign(tool_name, tool_info, envir = private$tool_knowledge)
+            
+            list(tool_name = tool_name, result = tool_result)
+          }, error = function(e) NULL)
+          
+          return(result)
+        }
+      }
+      
+      return(NULL)
+    },
+    
+    build_tool_context = function() {
+      if (length(private$tools) == 0) return("")
+      
+      tool_descriptions <- sapply(names(private$tools), function(name) {
+        knowledge <- get(name, envir = private$tool_knowledge)
+        usage_info <- if (knowledge$usage_count > 0) {
+          sprintf(" (used %d times)", knowledge$usage_count)
+        } else {
+          ""
+        }
+        sprintf("- %s%s: %s. Parameters: (%s)", 
+                name, 
+                usage_info, 
+                knowledge$description,
+                paste(knowledge$params, collapse = ", "))
+      })
+      
+      paste(
+        "Available tools:",
+        paste(tool_descriptions, collapse = "\n"),
+        "\nTo use a tool, specify it in the format: USE_TOOL|tool_name|param1=value1,param2=value2",
+        sep = "\n"
+      )
+    }
   )
 )

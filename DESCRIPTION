@@ -21,11 +21,11 @@ Imports:
     R6,
     httr,
     jsonlite,
-    ggplot2
-Suggests:
-    testthat (>= 3.0.0),
+    rmarkdown,
     knitr,
-    rmarkdown
+    tools
+Suggests:
+    testthat (>= 3.0.0)
 URL: https://github.com/mharu997/aigenflow
 BugReports: https://github.com/mharu997/aigenflow/issues
 Config/testthat/edition: 3
