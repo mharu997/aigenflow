@@ -5,7 +5,7 @@
 
 ### Key Features:
 - **Simplicity and Versatility:** Build agents and workflows effortlessly while leveraging a highly intuitive and structured, object-oriented architecture. *AIGenFlow* ensures a seamless user experience, even for complex tasks.
-- **Powerful AI Integration:** Seamlessly connect with LLMs like GPT-4 and other large language models to enable natural language processing, conversational agents, and execution agents, all within R.
+- **Powerful AI Integration:** Seamlessly connect with LLMs like GPT-4, Claude, and Mistral to enable natural language processing, conversational agents, and execution agents, all within R.
 - **Customizable Tools:** Extend agent functionalities and workflows with highly customizable tools for invoking agentic actions, ensuring the framework adapts to your unique needs.
 - **Constantly Evolving:** Though experimental, *AIGenFlow* is regularly updated to enhance its functionality, versatility, and usability, ensuring it remains a cutting-edge solution.
 
