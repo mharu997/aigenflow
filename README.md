@@ -40,125 +40,136 @@ Whether you’re automating workflows, building conversational agents, or unlock
 # Install from CRAN
 install.packages("aigenflow")
 
-# Or install the development version from GitHub
-# install.packages("devtools")
+# Or install development version
 devtools::install_github("username/aigenflow")
 ```
 
-## Quick Start
+## Environment Setup
 ```r
-# Load the package
+Sys.setenv(OPENAI_API_KEY = "your-openai-key")
+Sys.setenv(ANTHROPIC_API_KEY = "your-anthropic-key")
+Sys.setenv(AZURE_OPENAI_KEY = "your-azure-key")
+```
+
+## Basic Usage
+```r
 library(aigenflow)
 
-# Set your OpenAI API key
-Sys.setenv(OPENAI_API_KEY = "your-openai-api-key")
-
-# Initialize the OpenAI model
-openai_model <- OpenAIModel$new(model_name = "gpt-4")
-
-# Create an agent with memory
-agent <- Agent$new(model = openai_model, memory = ConversationMemory$new())
-
-# Start chatting!
-response <- agent$chat(
-  user_input = "Can you explain the bias-variance tradeoff?",
-  system_prompt = "You are a statistics expert.",
-  context_window = 5
-)
-```
-
-## Core Components
-
-### Language Models
-```r
-# Initialize different language models
-openai_model <- OpenAIModel$new(model_name = "gpt-4")
-```
-
-### Agents with Memory
-```r
-# Create an agent with conversation memory
-agent <- Agent$new(
-  model = openai_model,
-  memory = ConversationMemory$new()
-)
-```
-
-### Tools (Currently supports 6 out-of-box data analysis and visualization tools)
-```r
-# Add tools to extend functionality
-data_analysis_tool <- DataAnalysisTool$new()
-agent$add_tool(data_analysis_tool)
-```
-
-### Workflow Chains
-```r
-# Create a data processing workflow
-workflow <- Chain$new(steps = list(
-  load_data_step,
-  clean_data_step,
-  analyze_data_step
-))
-```
-
-## Examples
-
-### Creating Q&A and Calculator Agents 
-```r
-Sys.setenv(OPENAI_API_KEY = "YOUR_KEY")
-# Create an OpenAI model instance
-openai_model <- OpenAIModel$new(
-  model_name = "gpt-4"
-)
-
-# Create an agent with the OpenAI model
-agent <- Agent$new(model = openai_model)
-
-# Add a calculator tool to the agent
-calculator_tool <- CalculatorTool$new()
-agent$add_tool(calculator_tool)
-
-# Start a conversation with the agent
-response <- agent$chat(
-  user_input = "What is random forest and when should I use it?",
-  system_prompt = "You are a data science expert specializing in machine learning.",
-  context_window = 5,
+# Initialize models
+openai_model <- OpenAIModel(
+  model_name = "gpt-4",
   temperature = 0.7
 )
-cat("Assistant:", response, "\n")
 
-# Use the Calculator tool through the agent
-calculation_result <- agent$use_tool("Calculator", "2 + 2 * 5")
-cat("Calculator Result:", calculation_result, "\n")
-```
-### Creating Data Analysis and Reporting Assistant
-```r
-########################################
-# Example Usage: Advanced Agent Capabilities  with iris dataset
-########################################
-
-# This section demonstrates more advanced usage of the agent and tools for tasks such as
-# data analysis and report generation.
-
-# Create agents
-data_agent <- Agent$new(model = openai_model)  # Initializes an agent for data analysis.
-data_agent$add_tool(DataAnalysisTool$new())   # Adds the DataAnalysis tool to the agent.
-
-writer_agent <- Agent$new(model = openai_model)  # Initializes a separate agent for writing tasks.
-
-
-# Demonstrates how the summarize_and_report function can be applied to a dataset like iris.
-results <- summarize_and_report(
-  iris,  # The classic iris dataset used for this example.
-  "What are the main patterns and relationships between iris flower measurements?"  # Custom question for analysis.
+anthropic_model <- AnthropicModel(
+  model_name = "claude-3-opus-20240229",
+  temperature = 0.7
 )
 
-# Print the results
-cat("Raw Analysis:\n", results$raw_analysis, "\n\n")         # Prints the raw data analysis.
-cat("Data Interpretation:\n", results$interpretation, "\n\n") # Prints the interpreted insights.
-cat("Final Report:\n", results$final_report, "\n")           # Prints the final user-friendly report.
+azure_model <- AzureOpenAIModel(
+  deployment_name = "your-deployment",
+  resource_name = "your-resource"
+)
+
+# Create basic agent
+agent <- Agent(
+  model = openai_model,
+  name = "Assistant",
+  memory = ConversationMemory$new()
+)
+
+# Simple chat
+response <- agent$chat(
+  user_input = "What is machine learning?",
+  system_prompt = "You are a data science expert."
+)
 ```
 
+## Data Analysis Example
+```r
+# Create data analysis agent
+data_agent <- Agent(
+  model = openai_model,
+  name = "DataAnalyst",
+  memory = ConversationMemory$new()
+)
+
+# Add analysis tools
+analysis_tools <- list(
+  analyze = analyze_data,
+  summarize = function(data) summary(data),
+  correlate = function(data) cor(data[sapply(data, is.numeric)])
+)
+add_tools(data_agent, analysis_tools)
+
+# Analyze dataset
+analysis_result <- data_agent$chat(
+  user_input = "Analyze this dataset and explain the relationships.",
+  system_prompt = "You are a data scientist."
+)
+
+# Use tools directly
+correlations <- data_agent$use_tool("correlate", iris[, 1:4])
+summary_stats <- data_agent$use_tool("summarize", iris)
+```
+
+## Multi-Agent Workflow Example
+```r
+# Initialize orchestrator
+orchestrator <- Orchestrator$new()
+
+# Add agents
+orchestrator$add_agent("analyst", data_agent)
+orchestrator$add_agent("writer", Agent(
+  model = anthropic_model,
+  name = "TechnicalWriter"
+))
+
+# Define workflow
+orchestrator$define_workflow(
+  name = "data_analysis",
+  steps = list(
+    list(
+      name = "analyze",
+      agent = "analyst",
+      prompt = "Analyze this dataset: {{input}}",
+      system_prompt = "You are a data scientist. Provide detailed analysis."
+    ),
+    list(
+      name = "report",
+      agent = "writer",
+      prompt = "Create a clear report from this analysis: {{results.analyze}}",
+      system_prompt = "You are a technical writer. Create clear, engaging reports."
+    )
+  )
+)
+
+# Execute workflow
+results <- orchestrator$execute_workflow(
+  workflow_name = "data_analysis",
+  initial_input = iris,
+  context = list(
+    focus = "species classification",
+    detail_level = "technical"
+  )
+)
+```
+
+## Automated Report Generation
+```r
+# Generate comprehensive report
+report <- aigen_report(
+  model = anthropic_model,
+  data = iris,
+  data_question = "What distinguishes different iris species?",
+  system_prompt = "You are a botanist and data scientist."
+)
+
+# Access report components
+cat(report$raw_analysis)
+cat(report$interpretation)
+cat(report$final_report)
+```
 
 
 ## Applications
