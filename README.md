@@ -82,7 +82,7 @@ model <- OpenAIModel("gpt-4o")
 
 # Define analysis tools
 analysis_tools <- list(
-  analyze_data,
+  analysistool = analyze_data,
   summarize = function(data) summary(data),
   correlate = function(data) cor(data)
 )
@@ -99,9 +99,32 @@ result <- analyst$chat(
   user_input = "Analyze the mtcars dataset. Focus on the relationship between mpg and other variables.",
   system_prompt = "You are a data analyst. Use the available tools to analyze the data and provide insights."
 )
-
-
 ```
+##  Analysis Respones Example
+Based on the analysis of the `mtcars` dataset and focusing on the relationship between miles per gallon (mpg) and other variables, here are some insights:
+  
+  ### Correlation Insights:
+  1. **Negative Correlations:**
+  - **Cylinders (cyl):** There's a strong negative correlation between `mpg` and `cyl` (-0.85). This suggests that cars with more cylinders tend to have lower fuel efficiency.
+   - **Displacement (disp):** `mpg` is also strongly negatively correlated with `disp` (-0.85), indicating that larger engine displacement is associated with lower mpg.
+   - **Horsepower (hp):** A significant negative correlation exists between `mpg` and `hp` (-0.78), showing that higher horsepower is associated with lower fuel efficiency.
+   - **Weight (wt):** The strongest negative correlation is with `wt` (-0.87), suggesting that heavier cars tend to have worse fuel efficiency.
+   - **Carburetors (carb):** There is a moderate negative correlation with `carb` (-0.55), indicating that cars with more carburetors might have lower mpg.
+
+2. **Positive Correlations:**
+   - **Rear Axle Ratio (drat):** There is a moderate positive correlation between `mpg` and `drat` (0.68), indicating that a higher rear axle ratio is somewhat associated with better fuel efficiency.
+   - **Transmission (am):** The correlation with `am` is positive (0.60), suggesting that cars with manual transmission tend to have better mpg.
+   - **Number of Gears (gear):** A moderate positive correlation exists with `gear` (0.48), suggesting that cars with more gears might be more fuel-efficient.
+   - **Engine Shape (vs):** There is a moderate positive correlation with `vs` (0.66), indicating that cars with a straight engine layout might be more fuel-efficient.
+
+### Summary:
+- The analysis indicates that `mpg` is most negatively affected by the weight of the car (`wt`), followed by the number of cylinders (`cyl`) and engine displacement (`disp`).
+- On the positive side, having a manual transmission (`am`) and a higher rear axle ratio (`drat`) seem to be associated with better fuel efficiency.
+- Overall, the dataset does not have any missing values, ensuring the integrity of the analysis.
+
+These correlations provide a clear picture of how different features of a car impact its fuel efficiency, which is crucial for designing more efficient vehicles.
+
+
 
 ## Multi-Agent Workflow Example
 ```r
