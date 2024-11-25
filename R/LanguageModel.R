@@ -1,7 +1,6 @@
-library(R6)          
-library(httr)        
-library(jsonlite) 
-library(ggplot2) 
+library("R6")
+library("httr")
+library("jsonlite")
 
 #' @title LanguageModel Class
 #' @description Base class for defining language models.

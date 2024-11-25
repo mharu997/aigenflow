@@ -35,140 +35,194 @@ Whether you’re automating workflows, building conversational agents, or unlock
 - **Advanced Analytics**: AI-powered data interpretation and report generation
 - **Conversation Context**: Maintains context across multiple interactions
 
+# AIgen: R Package for AI Agent Orchestration
+
 ## Installation
 ```r
 # Install from CRAN
 install.packages("aigenflow")
 
 # Or install development version
-devtools::install_github("username/aigenflow")
+devtools::install_github("mharu997/aigenflow")
 ```
-
 ## Environment Setup
 ```r
 Sys.setenv(OPENAI_API_KEY = "your-openai-key")
 Sys.setenv(ANTHROPIC_API_KEY = "your-anthropic-key")
 Sys.setenv(AZURE_OPENAI_KEY = "your-azure-key")
 ```
-
 ## Basic Usage
 ```r
-library(aigenflow)
-
-# Initialize models
-openai_model <- OpenAIModel(
-  model_name = "gpt-4",
+# Create an OpenAI model instance
+model <- OpenAIModel(
+  model_name = "gpt-4o",
   temperature = 0.7
 )
 
-anthropic_model <- AnthropicModel(
-  model_name = "claude-3-opus-20240229",
-  temperature = 0.7
-)
-
-azure_model <- AzureOpenAIModel(
-  deployment_name = "your-deployment",
-  resource_name = "your-resource"
-)
-
-# Create basic agent
+# Create a basic agent with conversation memory
 agent <- Agent(
-  model = openai_model,
+  model = model,
   name = "Assistant",
-  memory = ConversationMemory$new()
+  memory = AgentConversationStore(max_messages = 10)
 )
 
-# Simple chat
+# Chat with the agent
 response <- agent$chat(
-  user_input = "What is machine learning?",
-  system_prompt = "You are a data science expert."
+  user_input = "What are the key principles of data analysis?",
+  system_prompt = "You are a data science educator. Explain concepts clearly and concisely."
 )
+
+print(cat(response))
 ```
 
 ## Data Analysis Example
 ```r
-# Create data analysis agent
-data_agent <- Agent(
-  model = openai_model,
-  name = "DataAnalyst",
-  memory = ConversationMemory$new()
-)
+# Create model and agent with analysis tools
+model <- OpenAIModel("gpt-4o")
 
-# Add analysis tools
+# Define analysis tools
 analysis_tools <- list(
-  analyze = analyze_data,
+  analyze_data,
   summarize = function(data) summary(data),
-  correlate = function(data) cor(data[sapply(data, is.numeric)])
-)
-add_tools(data_agent, analysis_tools)
-
-# Analyze dataset
-analysis_result <- data_agent$chat(
-  user_input = "Analyze this dataset and explain the relationships.",
-  system_prompt = "You are a data scientist."
+  correlate = function(data) cor(data)
 )
 
-# Use tools directly
-correlations <- data_agent$use_tool("correlate", iris[, 1:4])
-summary_stats <- data_agent$use_tool("summarize", iris)
+# Create analysis agent with tools
+analyst <- Agent(
+  model = model,
+  name = "DataAnalyst",
+  tools = analysis_tools
+)
+data("mtcars")
+# Analyze mtcars dataset
+result <- analyst$chat(
+  user_input = "Analyze the mtcars dataset. Focus on the relationship between mpg and other variables.",
+  system_prompt = "You are a data analyst. Use the available tools to analyze the data and provide insights."
+)
+
+
 ```
 
 ## Multi-Agent Workflow Example
 ```r
-# Initialize orchestrator
-orchestrator <- Orchestrator$new()
+# Define agents with different roles
+agents <- list(
+  analyst = list(
+    model = model,
+    tools = list(
+      analyze = analyze_data
+    )
+  ),
+  interpreter = list(
+    model = model
+  ),
+  reporter = list(
+    model = model
+  )
+)
 
-# Add agents
-orchestrator$add_agent("analyst", data_agent)
-orchestrator$add_agent("writer", Agent(
-  model = anthropic_model,
-  name = "TechnicalWriter"
-))
+# Create orchestrator
+orchestrator <- OrchestrateFlow(agents = agents)
 
 # Define workflow
-orchestrator$define_workflow(
-  name = "data_analysis",
+workflow <- DesignFlow(
+  orchestrator = orchestrator,
+  name = "data_analysis_workflow",
   steps = list(
     list(
       name = "analyze",
       agent = "analyst",
       prompt = "Analyze this dataset: {{input}}",
-      system_prompt = "You are a data scientist. Provide detailed analysis."
+      output_to_input = TRUE
+    ),
+    list(
+      name = "interpret",
+      agent = "interpreter",
+      prompt = "Interpret these statistical results: {{input}}",
+      system_prompt = "You are a data scientist. Explain technical findings in clear terms.",
+      output_to_input = TRUE
     ),
     list(
       name = "report",
-      agent = "writer",
-      prompt = "Create a clear report from this analysis: {{results.analyze}}",
-      system_prompt = "You are a technical writer. Create clear, engaging reports."
+      agent = "reporter",
+      prompt = "Create a business-friendly report from this analysis: {{input}}",
+      system_prompt = "You are a business analyst. Create clear, actionable reports."
     )
   )
 )
 
-# Execute workflow
-results <- orchestrator$execute_workflow(
-  workflow_name = "data_analysis",
-  initial_input = iris,
+# Execute workflow with mtcars dataset
+results <- ExecuteFlow(
+  orchestrator = orchestrator,
+  workflow = "data_analysis_workflow",
+  input = mtcars,
   context = list(
-    focus = "species classification",
-    detail_level = "technical"
+    dataset_name = "mtcars",
+    analysis_time = Sys.time()
   )
 )
+cat(results$analyze, results$interpret, results$report)
 ```
 
 ## Automated Report Generation
 ```r
-# Generate comprehensive report
+# Create model
+model <- OpenAIModel("gpt-4o")
+
+# Generate comprehensive report for mtcars dataset
 report <- aigen_report(
-  model = anthropic_model,
-  data = iris,
-  data_question = "What distinguishes different iris species?",
-  system_prompt = "You are a botanist and data scientist."
+  model = model,
+  data = mtcars,
+  data_question = "What factors most strongly influence a car's fuel efficiency?",
+  system_prompt = "You are a data scientist and technical writer. 
+                  Analyze the data and create clear, insightful reports."
 )
 
 # Access report components
-cat(report$raw_analysis)
-cat(report$interpretation)
-cat(report$final_report)
+print(report)  # Prints full report with metadata
+cat(report$raw_analysis)  # Technical analysis
+cat(report$interpretation)  # Expert interpretation
+cat(report$final_report)  # Executive summary
+```
+
+## Additional Features
+
+### Using Different Model Providers
+```r
+# Using Anthropic Claude
+claude_model <- AnthropicModel(
+  model_name = "claude-3-opus-20240229",
+  temperature = 0.7
+)
+
+# Using Azure OpenAI
+azure_model <- AzureOpenAIModel(
+  deployment_name = "your-deployment",
+  resource_name = "your-resource"
+)
+
+# Using Azure ML Endpoint
+azure_endpoint <- AzureMLEndpoint(
+  endpoint_url = "your-endpoint-url",
+  model_type = "chat"
+)
+```
+
+### Adding Tools to Existing Agents
+```r
+# Add new tools to an agent
+add_tools(analyst, 
+          tools = list(
+            visualize = function(data) {
+              ggplot(data, aes(x = wt, y = mpg)) +
+                geom_point() +
+                theme_minimal()
+            },
+            cluster = function(data, k = 3) {
+              kmeans(data, centers = k)
+            }
+          )
+)
 ```
 
 

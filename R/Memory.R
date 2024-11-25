@@ -1,7 +1,7 @@
-library(R6)          
-library(httr)        
-library(jsonlite) 
-library(ggplot2) 
+library("R6")
+library("httr")
+library("jsonlite")
+library("ggplot2") 
 
 #' @title Memory Class
 #' @description Memory class for storing and managing memory data.
@@ -85,5 +85,45 @@ ConversationMemory <- R6Class(
       start_idx <- max(1, len - n + 1)         # Calculates the start index for retrieval.
       return(private$memory_data[start_idx:len])  # Returns the most recent `n` messages.
     }
+  )
+)
+
+
+#' @title LimitedConversationMemory Class
+#' @description Memory class for storing conversation history with a size limit
+#' @export
+LimitedConversationMemory <- R6::R6Class(
+  "LimitedConversationMemory",
+  inherit = ConversationMemory,
+  
+  public = list(
+    #' @description Initialize memory with size limit
+    #' @param max_messages Maximum number of messages to retain
+    initialize = function(max_messages = NULL) {
+      super$initialize()
+      private$max_messages <- max_messages
+    },
+    
+    #' @description Add a message while respecting size limit
+    #' @param role The role of the message sender
+    #' @param content The message content
+    add_message = function(role, content) {
+      if (!is.null(private$max_messages)) {
+        messages <- self$get_recent_messages(Inf)
+        if (length(messages) >= private$max_messages) {
+          # Clear and rebuild memory keeping most recent messages
+          self$clear_memory()
+          start_idx <- length(messages) - private$max_messages + 2
+          for (i in start_idx:length(messages)) {
+            super$add_message(messages[[i]]$role, messages[[i]]$content)
+          }
+        }
+      }
+      super$add_message(role, content)
+    }
+  ),
+  
+  private = list(
+    max_messages = NULL
   )
 )

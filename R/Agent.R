@@ -1,6 +1,6 @@
-library(R6)          
-library(httr)        
-library(jsonlite) 
+library("R6")
+library("httr")
+library("jsonlite")
 
 #' @title Agent Class
 #' @description Agent class for an agent that interacts with language models and tools.

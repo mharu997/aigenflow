@@ -1,6 +1,6 @@
-library(R6)
-library(httr)
-library(jsonlite)
+library("R6")
+library("httr")
+library("jsonlite")
 
 #' @title Orchestrator Class
 #' @description Manages interactions and workflows between multiple agents
@@ -177,15 +177,99 @@ Orchestrator <- R6Class(
     },
     
     prepare_prompt = function(template, context, data) {
-      # Replace placeholders in template with actual values
-      # Format: {{variable}} for context/data variables
+      # Helper function to summarize dataset
+      summarize_dataset <- function(df) {
+        # Get basic structure
+        dims <- dim(df)
+        col_types <- sapply(df, class)
+        n_missing <- colSums(is.na(df))
+        
+        # Identify numeric columns for basic stats
+        numeric_cols <- sapply(df, is.numeric)
+        
+        # Build summary
+        summary_parts <- list(
+          # Basic information
+          sprintf("Dataset Overview:\n- Dimensions: %d rows × %d columns", dims[1], dims[2]),
+          
+          # Column information
+          sprintf("Column Types:\n%s", 
+                  paste(sprintf("- %s: %s", names(col_types), col_types), 
+                        collapse = "\n")),
+          
+          # Missing values (only if there are any)
+          if(any(n_missing > 0)) {
+            sprintf("Missing Values:\n%s",
+                    paste(sprintf("- %s: %d", names(n_missing), n_missing),
+                          collapse = "\n"))
+          },
+          
+          # Basic statistics for numeric columns
+          if(any(numeric_cols)) {
+            numeric_summary <- summary(df[, numeric_cols, drop = FALSE])
+            sprintf("Numeric Column Statistics:\n%s",
+                    paste(capture.output(numeric_summary), collapse = "\n"))
+          },
+          
+          # Categorical column summaries (if any)
+          if(any(!numeric_cols)) {
+            cat_summaries <- lapply(names(df)[!numeric_cols], function(col) {
+              vals <- table(df[[col]])
+              if(length(vals) <= 10) { # Only show if reasonably small number of categories
+                sprintf("- %s: %s", col, 
+                        paste(sprintf("%s (%d)", names(vals), vals), collapse = ", "))
+              } else {
+                sprintf("- %s: %d unique values", col, length(unique(df[[col]])))
+              }
+            })
+            sprintf("Categorical Columns:\n%s", paste(cat_summaries, collapse = "\n"))
+          },
+          
+          # Sample data (first few rows)
+          sprintf("Sample Data (first 5 rows):\n%s",
+                  paste(capture.output(head(df, 5)), collapse = "\n"))
+        )
+        
+        # Combine all parts
+        paste(unlist(summary_parts), collapse = "\n\n")
+      }
+      
+      # Helper function to format vectors and lists
+      format_value <- function(value) {
+        if (is.data.frame(value)) {
+          summarize_dataset(value)
+        } else if (is.list(value)) {
+          paste(sapply(names(value), function(n) {
+            sprintf("%s:\n%s", n, format_value(value[[n]]))
+          }), collapse = "\n")
+        } else if (is.vector(value) && length(value) > 1) {
+          if (is.numeric(value)) {
+            # Provide summary statistics for numeric vectors
+            stats <- summary(value)
+            paste("Vector summary:", 
+                  paste(names(stats), stats, sep = ": ", collapse = ", "),
+                  sprintf("\nLength: %d", length(value)))
+          } else {
+            # For other vectors, show length and sample if long
+            if (length(value) > 10) {
+              paste0(paste(value[1:10], collapse = ", "), 
+                     sprintf("... (%d more items)", length(value) - 10))
+            } else {
+              paste(value, collapse = ", ")
+            }
+          }
+        } else {
+          as.character(value)
+        }
+      }
+      
       result <- template
       
       # Replace context variables
       if (length(context) > 0) {
         for (name in names(context)) {
           pattern <- sprintf("\\{\\{context.%s\\}\\}", name)
-          result <- gsub(pattern, as.character(context[[name]]), result)
+          result <- gsub(pattern, format_value(context[[name]]), result)
         }
       }
       
@@ -195,12 +279,11 @@ Orchestrator <- R6Class(
           if (is.list(data[[name]])) {
             for (subname in names(data[[name]])) {
               pattern <- sprintf("\\{\\{%s.%s\\}\\}", name, subname)
-              result <- gsub(pattern, as.character(data[[name]][[subname]]), result)
+              result <- gsub(pattern, format_value(data[[name]][[subname]]), result)
             }
-          } else {
-            pattern <- sprintf("\\{\\{%s\\}\\}", name)
-            result <- gsub(pattern, as.character(data[[name]]), result)
           }
+          pattern <- sprintf("\\{\\{%s\\}\\}", name)
+          result <- gsub(pattern, format_value(data[[name]]), result)
         }
       }
       

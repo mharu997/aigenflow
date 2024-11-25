@@ -1,6 +1,10 @@
-library(R6)          
-library(httr)        
-library(jsonlite) 
+#' @import httr
+#' @import jsonlite
+#' @import R6
+
+library("R6")
+library("httr")
+library("jsonlite")
 
 
 ############################################
@@ -332,9 +336,157 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 }
 
 
-########################################
+
+######################################################
+# Model Orchestrators (Orchestrate, Design, Execute)
+######################################################
+#' Create a new orchestrator instance with predefined agents and workflows
+#'
+#' @param agents Named list of agents or agent configurations
+#' @param workflows Named list of workflow definitions
+#' @return An Orchestrator instance
+#' @export
+OrchestrateFlow <- function(agents = list(), workflows = list()) {
+  
+  # Creates an orchestration system that manages multiple agents and their interactions.
+  # Arguments:
+  #   - agents: Named list of agent configurations, where each agent can be either:
+  #             - An existing Agent instance
+  #             - A configuration list with:
+  #  - model: Language model instance (OpenAIModel, AnthropicModel, etc.)
+  #  - tools: Optional named list/vector of functions
+  agent_instances <- lapply(names(agents), function(name) {
+    config <- agents[[name]]
+    
+    if (inherits(config, "aigen_Agent")) {
+      return(config)
+    }
+    
+    if (!is.list(config) || is.null(config$model)) {
+      stop(sprintf("Invalid configuration for agent '%s'", name))
+    }
+    
+    Agent(
+      model = config$model,
+      name = name,
+      memory = config$memory,
+      tools = config$tools
+    )
+  })
+  names(agent_instances) <- names(agents)
+  
+  Orchestrator$new(
+    agents = agent_instances,
+    workflows = workflows
+  )
+}
+
+#' Design an agent workflow configuration
+#'
+#' @param orchestrator An Orchestrator instance
+#' @param name Name of the workflow
+#' @param steps List of workflow step definitions
+#' @param conditions Optional conditions for workflow transitions
+#' @return The modified Orchestrator instance (invisibly)
+#' @export
+DesignFlow <- function(orchestrator, name, steps, conditions = NULL) {
+  if (!inherits(orchestrator, "Orchestrator")) {
+    stop("orchestrator must be an Orchestrator instance")
+  }
+  
+  # Defines a workflow that coordinates how agents work together.
+  # orchestrator: Orchestrator instance from OrchestrateFlow()
+  #   - name: Character string identifying the workflow
+  #   - steps: List of workflow steps, each containing:
+  #   
+  #       - name: Step identifier
+  #       - agent: Name of agent to use (must match agent names in OrchestrateFlow)
+  #       - prompt: Template for agent instruction
+  #       - system_prompt: Optional system context
+  #       - output_to_input: Logical, whether to pass output to next step
+  #       - conditions: Optional list of conditional expressions for step execution
+  processed_steps <- lapply(steps, function(step) {
+    if (!is.list(step) || is.null(step$name) || is.null(step$agent)) {
+      stop("Each step must be a list with 'name' and 'agent' fields")
+    }
+    
+    step$prompt <- step$prompt %||% "{{input}}"
+    step$output_to_input <- step$output_to_input %||% FALSE
+    
+    step
+  })
+  
+  orchestrator$define_workflow(
+    name = name,
+    steps = processed_steps,
+    conditions = conditions
+  )
+  
+  invisible(orchestrator)
+}
+
+#' Execute a workflow with orchestrated agents
+#'
+#' @param orchestrator An Orchestrator instance
+#' @param workflow Name of the workflow to run
+#' @param input Input data for the workflow
+#' @param context Optional context data
+#' @return Results of the workflow execution
+#' @export
+ExecuteFlow <- function(orchestrator, workflow, input, context = list()) {
+  if (!inherits(orchestrator, "Orchestrator")) {
+    stop("orchestrator must be an Orchestrator instance")
+  }
+  # Runs a designed workflow with specified inputs.
+  #       - orchestrator: Orchestrator instance from OrchestrateFlow()
+  #       - workflow: Name of workflow to execute
+  #       - input: Initial data for the workflow
+  #       - context: Optional list of contextual information available to all steps
+  orchestrator$execute_workflow(
+    workflow_name = workflow,
+    initial_input = input,
+    context = context
+  )
+}
+
+
+#############################################
+# Function to enable Agent Memory
+#############################################
+
+#' Create a new memory instance for conversation history
+#' 
+#' @param type Type of memory to create ("conversation", "vectorstore")
+#' @return A Memory instance ready to use with Agent
+#' @export
+AgentMemory <- function(type = c("conversation", "vectorstore")) {
+  type <- match.arg(type)
+  
+  switch(type,
+         "conversation" = ConversationMemory$new(),
+         "vectorstore" = stop("Vectorstore memory not yet implemented"))
+}
+
+#' Create conversation memory with optional size limit
+#' 
+#' @param max_messages Maximum number of messages to retain (NULL for unlimited)
+#' @return A ConversationMemory instance
+#' @examples
+#' memory <- ConversationStore(max_messages = 10)
+#' agent <- Agent(model, memory = memory)
+#' @export
+AgentConversationStore <- function(max_messages = NULL) {
+  if (is.null(max_messages)) {
+    ConversationMemory$new()
+  } else {
+    LimitedConversationMemory$new(max_messages = max_messages)
+  }
+}
+
+
+#############################################
 # Function to analyze data using both agents
-########################################
+#############################################
 
 
 #' @title Perform comprehensive data analysis
