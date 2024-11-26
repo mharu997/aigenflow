@@ -100,91 +100,182 @@ result <- analyst$chat(
   system_prompt = "You are a data analyst. Use the available tools to analyze the data and provide insights."
 )
 ```
-##  Analysis Respones Example
-Based on the analysis of the `mtcars` dataset and focusing on the relationship between miles per gallon (mpg) and other variables, here are some insights:
-  
-  ### Correlation Insights:
-  1. **Negative Correlations:**
-  - **Cylinders (cyl):** There's a strong negative correlation between `mpg` and `cyl` (-0.85). This suggests that cars with more cylinders tend to have lower fuel efficiency.
-   - **Displacement (disp):** `mpg` is also strongly negatively correlated with `disp` (-0.85), indicating that larger engine displacement is associated with lower mpg.
-   - **Horsepower (hp):** A significant negative correlation exists between `mpg` and `hp` (-0.78), showing that higher horsepower is associated with lower fuel efficiency.
-   - **Weight (wt):** The strongest negative correlation is with `wt` (-0.87), suggesting that heavier cars tend to have worse fuel efficiency.
-   - **Carburetors (carb):** There is a moderate negative correlation with `carb` (-0.55), indicating that cars with more carburetors might have lower mpg.
 
-2. **Positive Correlations:**
-   - **Rear Axle Ratio (drat):** There is a moderate positive correlation between `mpg` and `drat` (0.68), indicating that a higher rear axle ratio is somewhat associated with better fuel efficiency.
-   - **Transmission (am):** The correlation with `am` is positive (0.60), suggesting that cars with manual transmission tend to have better mpg.
-   - **Number of Gears (gear):** A moderate positive correlation exists with `gear` (0.48), suggesting that cars with more gears might be more fuel-efficient.
-   - **Engine Shape (vs):** There is a moderate positive correlation with `vs` (0.66), indicating that cars with a straight engine layout might be more fuel-efficient.
+## Pipeline Operations
 
-### Summary:
-- The analysis indicates that `mpg` is most negatively affected by the weight of the car (`wt`), followed by the number of cylinders (`cyl`) and engine displacement (`disp`).
-- On the positive side, having a manual transmission (`am`) and a higher rear axle ratio (`drat`) seem to be associated with better fuel efficiency.
-- Overall, the dataset does not have any missing values, ensuring the integrity of the analysis.
+The package supports intuitive pipeline operations using the `%>%` operator, allowing for seamless chaining of models, agents, and data analysis.
 
-These correlations provide a clear picture of how different features of a car impact its fuel efficiency, which is crucial for designing more efficient vehicles.
+### Key Functions
+
+- `ask()`: Direct questions to an agent
+- `analyze()`: Analyze data with an agent
+- `process_with()`: Process previous results with another agent
+- `get_response()`: Extract final response
+- `get_history()`: Get full conversation history
+
+### Basic Model and Agent Pipeline
+
+Create models and agents using a simple pipeline:
+
+```r
+# Create an OpenAI GPT-4 agent
+gpt4_agent <- OpenAIModel("gpt-4") %>%
+  Agent(memory = AgentConversationStore(100))
+
+# Create a Claude agent
+claude_agent <- AnthropicModel("claude-3-opus-20240229") %>%
+  Agent()
+```
+
+### Direct Questions
+
+Ask questions and get responses:
+
+```r
+# Single question
+response <- gpt4_agent %>%
+  ask("What is machine learning?") %>%
+  get_response()
+
+# Chain of questions
+responses <- gpt4_agent %>%
+  ask("What is deep learning?") %>%
+  process_with(claude_agent, "Expand on that explanation:") %>%
+  process_with(gpt4_agent, "Summarize the key points:")
+
+# Access full response chain
+print(responses)  # Shows all intermediate steps
+final_answer <- get_response(responses)  # Gets just the final response
+history <- get_history(responses)  # Gets the full conversation history
+```
+
+### Data Analysis Pipeline
+
+Analyze data using multiple agents:
+
+```r
+# Basic data analysis
+analysis <- mtcars %>%
+  analyze(gpt4_agent, "Analyze the relationships between MPG and other variables:")
+
+# Multi-step analysis with different agents
+result <- mtcars %>%
+  analyze(gpt4_agent, "Initial statistical analysis:") %>%
+  process_with(claude_agent, "Expand on these findings:") %>%
+  process_with(gpt4_agent, "Summarize the key insights:")
+
+# Access results
+print(result)  # Shows full analysis chain
+final_insights <- get_response(result)  # Gets final summary
+```
+
+### Working with Groups
+
+Analyze grouped data:
+
+```r
+iris %>%
+  group_by(Species) %>%
+  summarise(across(everything(), mean)) %>%
+  analyze(gpt4_agent, "Compare the characteristics across species:") %>%
+  process_with(claude_agent, "What evolutionary insights can we draw?") %>%
+  get_response()
+```
+
+
+### Verbose Output
+
+All operations support verbose output to track the conversation. 
+This will show each step of the process, including:
+- The agent being used
+- The prompt/input
+- The response from each step
+
+```r
+mtcars %>%
+  analyze(gpt4_agent, "Analyze this dataset:", verbose = TRUE) %>%
+  process_with(claude_agent, "What additional patterns do you see?", verbose = TRUE) %>%
+  get_response()
+```
+
+
+### Response Chain Access
+
+The response chain maintains a complete history of the conversation. Each step in the history includes:
+- The agent used
+- The prompt given
+- The response received
+
+```r
+result <- mtcars %>%
+  analyze(gpt4_agent, "Initial analysis:") %>%
+  process_with(claude_agent, "Review findings:") %>%
+  process_with(gpt4_agent, "Final summary:")
+
+# Access different components
+final_response <- get_response(result)  # Final summary
+history <- get_history(result)  # Full analysis chain
+print(result)  # Complete output with all steps
+```
+
+This pipeline system allows for intuitive data analysis workflows while maintaining a complete record of the analysis process.
 
 
 
 ## Multi-Agent Workflow Example
+
+This example demonstrates how to create a data analysis workflow using multiple specialized agents.
+
 ```r
-# Define agents with different roles
-agents <- list(
-  analyst = list(
-    model = model,
-    tools = list(
-      analyze = analyze_data
-    )
-  ),
-  interpreter = list(
-    model = model
-  ),
-  reporter = list(
-    model = model
+library(aigen)
+
+# Create agents with specialized tools
+analyst <- Agent(
+  model = OpenAIModel("gpt-4"),
+  tools = list(
+    analyze = function(data) {
+      list(
+        stats = summary(data),
+        correlations = cor(data[sapply(data, is.numeric)])
+      )
+    }
   )
 )
 
-# Create orchestrator
-orchestrator <- OrchestrateFlow(agents = agents)
-
-# Define workflow
-workflow <- DesignFlow(
-  orchestrator = orchestrator,
-  name = "data_analysis_workflow",
-  steps = list(
-    list(
-      name = "analyze",
-      agent = "analyst",
-      prompt = "Analyze this dataset: {{input}}",
-      output_to_input = TRUE
-    ),
-    list(
-      name = "interpret",
-      agent = "interpreter",
-      prompt = "Interpret these statistical results: {{input}}",
-      system_prompt = "You are a data scientist. Explain technical findings in clear terms.",
-      output_to_input = TRUE
-    ),
-    list(
-      name = "report",
-      agent = "reporter",
-      prompt = "Create a business-friendly report from this analysis: {{input}}",
-      system_prompt = "You are a business analyst. Create clear, actionable reports."
-    )
+viz_expert <- Agent(
+  model = OpenAIModel("gpt-4"),
+  tools = list(
+    plot = function(data) {
+      ggplot(data) + 
+        geom_point(aes(x = mpg, y = wt)) +
+        theme_minimal()
+    }
   )
 )
 
-# Execute workflow with mtcars dataset
-results <- ExecuteFlow(
-  orchestrator = orchestrator,
-  workflow = "data_analysis_workflow",
-  input = mtcars,
-  context = list(
-    dataset_name = "mtcars",
-    analysis_time = Sys.time()
-  )
+writer <- Agent(
+  model = AnthropicModel("claude-3-opus-20240229")
 )
-cat(results$analyze, results$interpret, results$report)
+
+# Create workflow
+flow <- CreateFlow(
+  agents = list( analyst = analyst, viz = viz_expert, writer = writer),
+  workflows = list(data_report = Workflow(
+      Step(name = "analyze",agent = "analyst", prompt = "Analyze this dataset focusing on key patterns: {{input}}", 
+      pass_to_next = TRUE),
+      Step(name = "visualize", agent = "viz", prompt = "Create visualizations for the key findings: {{input}}",
+        pass_to_next = TRUE),
+      Step(name = "report",agent = "writer", 
+      prompt = paste("Create a report combining:", "Analysis: {{results.analyze}}", "Visuals: {{results.visualize}}"
+)))))
+
+# Run workflow
+results <- RunFlow(flow, workflow = "data_report", input = mtcars,
+  context = list(objective = "Understand factors affecting fuel efficiency")
+)
+
+# Access results
+report <- results$report
 ```
 
 ## Automated Report Generation

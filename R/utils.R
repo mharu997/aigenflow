@@ -1,10 +1,12 @@
 #' @import httr
 #' @import jsonlite
 #' @import R6
+#' @import magrittr
 
 library("R6")
 library("httr")
 library("jsonlite")
+library("magrittr")
 
 
 ############################################
@@ -223,6 +225,7 @@ MistralEndpoint <- function(endpoint_url,
 #' Create a new Agent instance with optional tools
 #' 
 #' @param model An instance of a language model (OpenAI, Anthropic, etc.)
+#' @param name Name of the Agent that is created
 #' @param memory Optional ConversationMemory instance for managing chat history
 #' @param tools Named list of functions to use as tools
 #' @param tools_env Environment to look for tool functions, defaults to parent frame
@@ -231,13 +234,14 @@ MistralEndpoint <- function(endpoint_url,
 #' @examples
 #' # Simple initialization with a model
 #' model <- OpenAIModel("gpt-4")
-#' agent <- Agent_new(model)
+#' agent <- Agent(model)
 #' 
 #' # Initialize with tools
 #' sum_two <- function(a, b) a + b
 #' analyze_data <- function(data, col) summary(data[[col]])
-#' agent <- Agent_new(
+#' agent <- Agent(
 #'   model = model,
+#'   name = "Joe Doe",
 #'   tools = c("sum" = "sum_two", 
 #'             "analyze" = "analyze_data")
 #' )
@@ -340,21 +344,66 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 ######################################################
 # Model Orchestrators (Orchestrate, Design, Execute)
 ######################################################
-#' Create a new orchestrator instance with predefined agents and workflows
-#'
-#' @param agents Named list of agents or agent configurations
+############################################
+# High-Level Workflow API
+############################################
+
+#' Create a workflow step configuration
+#' @param name Character string identifying the step
+#' @param agent Character string identifying the agent to use
+#' @param prompt The prompt template for this step
+#' @param system Optional system prompt for the step
+#' @param pass_to_next Logical, whether to pass output to next step
+#' @return A list containing step configuration
+#' @export 
+Step <- function(name, agent, prompt, 
+                 system = NULL, 
+                 pass_to_next = FALSE) {
+  if (!is.character(name) || !is.character(agent) || !is.character(prompt)) {
+    stop("name, agent, and prompt must be character strings")
+  }
+  
+  list(
+    name = name,
+    agent = agent,
+    prompt = prompt,
+    system_prompt = system,
+    output_to_input = pass_to_next
+  )
+}
+
+#' Create a workflow definition
+#' @param ... Step configurations created by Step()
+#' @return A list containing the workflow definition
+#' @export
+Workflow <- function(...) {
+  steps <- list(...)
+  if (length(steps) == 0) {
+    stop("Workflow must contain at least one step")
+  }
+  
+  # Validate steps
+  if (!all(sapply(steps, function(s) {
+    all(c("name", "agent", "prompt") %in% names(s))
+  }))) {
+    stop("Each step must be created using the Step() function")
+  }
+  
+  list(steps = steps)
+}
+
+#' Create an orchestrated flow with agents and workflows
+#' @param agents Named list of Agent instances or configurations
 #' @param workflows Named list of workflow definitions
 #' @return An Orchestrator instance
 #' @export
-OrchestrateFlow <- function(agents = list(), workflows = list()) {
+CreateFlow <- function(agents = list(), workflows = list()) {
+  # Handle single agent case
+  if (inherits(agents, "aigen_Agent")) {
+    agents <- list(default = agents)
+  }
   
-  # Creates an orchestration system that manages multiple agents and their interactions.
-  # Arguments:
-  #   - agents: Named list of agent configurations, where each agent can be either:
-  #             - An existing Agent instance
-  #             - A configuration list with:
-  #  - model: Language model instance (OpenAIModel, AnthropicModel, etc.)
-  #  - tools: Optional named list/vector of functions
+  # Process agents
   agent_instances <- lapply(names(agents), function(name) {
     config <- agents[[name]]
     
@@ -375,79 +424,42 @@ OrchestrateFlow <- function(agents = list(), workflows = list()) {
   })
   names(agent_instances) <- names(agents)
   
-  Orchestrator$new(
-    agents = agent_instances,
-    workflows = workflows
-  )
-}
-
-#' Design an agent workflow configuration
-#'
-#' @param orchestrator An Orchestrator instance
-#' @param name Name of the workflow
-#' @param steps List of workflow step definitions
-#' @param conditions Optional conditions for workflow transitions
-#' @return The modified Orchestrator instance (invisibly)
-#' @export
-DesignFlow <- function(orchestrator, name, steps, conditions = NULL) {
-  if (!inherits(orchestrator, "Orchestrator")) {
-    stop("orchestrator must be an Orchestrator instance")
+  # Create orchestrator
+  orchestrator <- Orchestrator$new(agents = agent_instances)
+  
+  # Define workflows
+  if (length(workflows) > 0) {
+    for (name in names(workflows)) {
+      workflow <- workflows[[name]]
+      orchestrator$define_workflow(
+        name = name,
+        steps = workflow$steps
+      )
+    }
   }
   
-  # Defines a workflow that coordinates how agents work together.
-  # orchestrator: Orchestrator instance from OrchestrateFlow()
-  #   - name: Character string identifying the workflow
-  #   - steps: List of workflow steps, each containing:
-  #   
-  #       - name: Step identifier
-  #       - agent: Name of agent to use (must match agent names in OrchestrateFlow)
-  #       - prompt: Template for agent instruction
-  #       - system_prompt: Optional system context
-  #       - output_to_input: Logical, whether to pass output to next step
-  #       - conditions: Optional list of conditional expressions for step execution
-  processed_steps <- lapply(steps, function(step) {
-    if (!is.list(step) || is.null(step$name) || is.null(step$agent)) {
-      stop("Each step must be a list with 'name' and 'agent' fields")
-    }
-    
-    step$prompt <- step$prompt %||% "{{input}}"
-    step$output_to_input <- step$output_to_input %||% FALSE
-    
-    step
-  })
-  
-  orchestrator$define_workflow(
-    name = name,
-    steps = processed_steps,
-    conditions = conditions
-  )
-  
-  invisible(orchestrator)
+  orchestrator
 }
 
-#' Execute a workflow with orchestrated agents
-#'
+#' Execute a workflow
 #' @param orchestrator An Orchestrator instance
-#' @param workflow Name of the workflow to run
+#' @param workflow Name of the workflow to execute
 #' @param input Input data for the workflow
 #' @param context Optional context data
-#' @return Results of the workflow execution
+#' @return Results of workflow execution
 #' @export
-ExecuteFlow <- function(orchestrator, workflow, input, context = list()) {
+RunFlow <- function(orchestrator, workflow, input, context = list()) {
   if (!inherits(orchestrator, "Orchestrator")) {
     stop("orchestrator must be an Orchestrator instance")
   }
-  # Runs a designed workflow with specified inputs.
-  #       - orchestrator: Orchestrator instance from OrchestrateFlow()
-  #       - workflow: Name of workflow to execute
-  #       - input: Initial data for the workflow
-  #       - context: Optional list of contextual information available to all steps
+  
   orchestrator$execute_workflow(
     workflow_name = workflow,
     initial_input = input,
     context = context
   )
 }
+
 
 
 #############################################
@@ -482,6 +494,215 @@ AgentConversationStore <- function(max_messages = NULL) {
     LimitedConversationMemory$new(max_messages = max_messages)
   }
 }
+
+
+
+
+
+
+
+
+####################################################
+# Function to enable %>% operators with Agents
+####################################################
+
+#' Enable piping for AI models, agents, and data
+#' @importFrom magrittr %>%
+#' Make models pipe-friendly
+#' @export
+`%>%.aigen_LanguageModel` <- function(model, f, ...) {
+  if (inherits(f, "function") && identical(f, Agent)) {
+    f(model, ...)
+  } else {
+    magrittr::freduce(model, list(f))
+  }
+}
+
+#' Make agents pipe-friendly
+#' @export
+`%>%.aigen_Agent` <- function(agent, f, ...) {
+  if (is.function(f) && identical(f, ask)) {
+    f(agent, ...)
+  } else {
+    magrittr::freduce(agent, list(f))
+  }
+}
+
+#' Response object for chaining
+#' @export
+ai_response <- function(agent, response, history = list()) {
+  structure(
+    list(
+      agent = agent,
+      response = response,
+      history = history  # Track chain of responses
+    ),
+    class = "ai_response"
+  )
+}
+
+#' Process data or previous responses with an agent
+#' @export
+process_with <- function(input, agent, prompt = NULL, verbose = TRUE) {
+  if (!inherits(agent, "aigen_Agent")) {
+    stop("agent must be an Agent")
+  }
+  
+  # Handle input from previous ai_response
+  input_str <- if (inherits(input, "ai_response")) {
+    input$response
+  } else if (is.data.frame(input)) {
+    paste(capture.output(print(input)), collapse = "\n")
+  } else {
+    as.character(input)
+  }
+  
+  full_prompt <- if (!is.null(prompt)) {
+    sprintf("%s\n\n%s", prompt, input_str)
+  } else {
+    input_str
+  }
+  
+  response <- agent$chat(full_prompt)
+  
+  if (verbose) {
+    cat("\n=== Process With:", agent$get_name(), "===\n")
+    if (!is.null(prompt)) cat("Prompt:", prompt, "\n")
+    cat("Response:\n", response, "\n")
+    cat("===============================\n")
+  }
+  
+  # Build history
+  history <- if (inherits(input, "ai_response")) {
+    c(input$history, 
+      list(list(
+        agent = input$agent$get_name(),
+        prompt = if (!is.null(prompt)) prompt else "Process input",
+        response = input$response
+      )))
+  } else {
+    list()
+  }
+  
+  # Add current response to history
+  history <- c(history, 
+               list(list(
+                 agent = agent$get_name(),
+                 prompt = if (!is.null(prompt)) prompt else "Process input",
+                 response = response
+               ))
+  )
+  
+  ai_response(agent, response, history)
+}
+
+#' Analyze data with specific focus
+#' @export
+analyze <- function(data, agent, prompt = "Analyze this data:", verbose = TRUE) {
+  if (!inherits(agent, "aigen_Agent")) {
+    # Swap if data is first argument
+    temp <- data
+    data <- agent
+    agent <- temp
+  }
+  
+  if (!inherits(agent, "aigen_Agent")) {
+    stop("An Agent is required")
+  }
+  
+  data_str <- if (is.data.frame(data)) {
+    paste(capture.output(print(data)), collapse = "\n")
+  } else {
+    as.character(data)
+  }
+  
+  response <- agent$chat(sprintf("%s\n\n%s", prompt, data_str))
+  
+  if (verbose) {
+    cat("\n=== Analysis With:", agent$get_name(), "===\n")
+    cat("Prompt:", prompt, "\n")
+    cat("Response:\n", response, "\n")
+    cat("===============================\n")
+  }
+  
+  ai_response(agent, response, list(list(
+    agent = agent$get_name(),
+    prompt = prompt,
+    response = response
+  )))
+}
+
+#' Ask function for direct questions
+#' @export
+ask <- function(agent, input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
+  if (!inherits(agent, "aigen_Agent")) {
+    stop("First argument must be an Agent")
+  }
+  
+  response <- agent$chat(input, system_prompt, context_window)
+  
+  if (verbose) {
+    cat("\n=== Ask:", agent$get_name(), "===\n")
+    cat("Input:", input, "\n")
+    if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+    cat("Response:\n", response, "\n")
+    cat("===============================\n")
+  }
+  
+  ai_response(agent, response)
+}
+
+#' Get response history
+#' @export
+get_history <- function(x) {
+  if (inherits(x, "ai_response")) {
+    x$history
+  } else {
+    NULL
+  }
+}
+
+#' Get just the response from an ai_response object
+#' @export
+get_response <- function(x) {
+  if (inherits(x, "ai_response")) {
+    x$response
+  } else {
+    x  # Return unchanged if not ai_response
+  }
+}
+
+# Print method for ai_response
+#' @export
+print.ai_response <- function(x, ...) {
+  cat(x$response)
+  invisible(x)
+}
+
+
+#' Print method for ai_response
+#' @export
+print.ai_response <- function(x, ...) {
+  cat("\nCurrent Response:\n")
+  cat(x$response)
+  
+  if (length(x$history) > 0) {
+    cat("\n\nResponse Chain:\n")
+    for (i in seq_along(x$history)) {
+      cat(sprintf("\nStep %d: [Agent: %s]\n", i, x$history[[i]]$agent))
+      cat("Prompt:", x$history[[i]]$prompt, "\n")
+      cat("Response:\n", x$history[[i]]$response, "\n")
+      cat("---\n")
+    }
+  }
+  
+  invisible(x)
+}
+
+
+
+
+
 
 
 #############################################
