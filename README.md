@@ -149,6 +149,20 @@ final_answer <- get_response(responses)  # Gets just the final response
 history <- get_history(responses)  # Gets the full conversation history
 ```
 
+### Create a new column using an agent by asking a question
+
+Function is ideal for text summarization and parsing data. 
+Here is an example of how to use the ask() function to create a new column in a dataset by asking a question to an agent.
+
+```r
+new_col <- mtcars %>%
+  # rowwise() %>%  # Add this line
+  mutate(analysis = ask(analyst, paste0("Report the largest value between ", cyl, 
+                          ", ", mpg, "and, ", hp, 
+                          ". Only return a single value without accompaniing words just the number.")))
+```
+
+
 ### Data Analysis Pipeline
 
 Analyze data using multiple agents:
@@ -168,6 +182,7 @@ result <- mtcars %>%
 print(result)  # Shows full analysis chain
 final_insights <- get_response(result)  # Gets final summary
 ```
+
 
 ### Working with Groups
 
@@ -227,8 +242,6 @@ This pipeline system allows for intuitive data analysis workflows while maintain
 This example demonstrates how to create a data analysis workflow using multiple specialized agents.
 
 ```r
-library(aigen)
-
 # Create agents with specialized tools
 analyst <- Agent(
   model = OpenAIModel("gpt-4"),

@@ -460,8 +460,6 @@ RunFlow <- function(orchestrator, workflow, input, context = list()) {
   )
 }
 
-
-
 #############################################
 # Function to enable Agent Memory
 #############################################
@@ -632,25 +630,56 @@ analyze <- function(data, agent, prompt = "Analyze this data:", verbose = TRUE) 
   )))
 }
 
-#' Ask function for direct questions
+#' Ask function for direct questions with string interpolation
+#' @param agent An Agent instance
+#' @param template Question template with variables in curly braces
+#' @param ... Variables to interpolate into template
+#' @param system_prompt Optional system instructions
+#' @param context_window Number of messages to include for context
+#' @param verbose Whether to print detailed output
 #' @export
-ask <- function(agent, input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
+ask <- function(agent, prompt, system_prompt = NULL, context_window = 5, verbose = TRUE) {
   if (!inherits(agent, "aigen_Agent")) {
     stop("First argument must be an Agent")
   }
   
-  response <- agent$chat(input, system_prompt, context_window)
+  # Check if we're being called from mutate
+  in_mutate <- inherits(prompt, "numeric") || inherits(prompt, "character") && length(prompt) > 1
   
-  if (verbose) {
-    cat("\n=== Ask:", agent$get_name(), "===\n")
-    cat("Input:", input, "\n")
-    if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
-    cat("Response:\n", response, "\n")
-    cat("===============================\n")
+  if (in_mutate) {
+    # Vectorized operation for mutate
+    return(vapply(prompt, function(p) {
+      response <- agent$chat(p, system_prompt, context_window)
+      if (verbose) {
+        cat("\n=== Ask:", agent$get_name(), "===\n")
+        cat("Input:", p, "\n")
+        if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+        cat("Response:\n", response, "\n")
+        cat("===============================\n")
+      }
+      response
+    }, character(1)))
+  } else {
+    # Regular single prompt operation
+    response <- agent$chat(prompt, system_prompt, context_window)
+    
+    if (verbose) {
+      cat("\n=== Ask:", agent$get_name(), "===\n")
+      cat("Input:", prompt, "\n")
+      if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+      cat("Response:\n", response, "\n")
+      cat("===============================\n")
+    }
+    
+    # Return just the response when in a mutate context
+    if (identical(topenv(), .GlobalEnv)) {
+      ai_response(agent, response)
+    } else {
+      response
+    }
   }
-  
-  ai_response(agent, response)
 }
+
 
 #' Get response history
 #' @export
