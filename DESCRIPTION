@@ -1,5 +1,5 @@
 Package: aigenflow
-Title: R Framework for Language Models and Intelligent Agents
+Title: R Framework for AI Language Models and Intelligent Agents
 Version: 0.1.0
 Date: 2024-11-12
 Authors@R: person(given = "Margar",
@@ -7,7 +7,7 @@ Authors@R: person(given = "Margar",
 	   role = c("aut", "cre"),
            email = "mharu997@gmail.com")
 Description: A comprehensive R framework for working with language models and 
-    intelligent agents. This package provides tools for integrating with 
+    developing intelligent agents. This package provides tools for integrating with 
     language models (like OpenAI's GPT), managing conversations, performing 
     data analysis, and creating automated workflows. Features include a 
     modular architecture for language model integration, conversation memory 

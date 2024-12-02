@@ -51,6 +51,9 @@ aigen_LanguageModel <- R6Class(
 # OpenAI Model Implementation
 ########################################
 
+#' @title OpenAIModel Class
+#' @description Implements functionality specific to OpenAI language models with support for preview models
+#' @export
 aigen_OpenAIModel <- R6Class(
   "aigen_OpenAIModel",
   inherit = aigen_LanguageModel,
@@ -59,10 +62,16 @@ aigen_OpenAIModel <- R6Class(
     initialize = function(model_name, 
                           api_key = Sys.getenv("OPENAI_API_KEY"), 
                           max_tokens = 1000,
-                          temperature = 0.7) {
+                          temperature = 0.7,
+                          supports_system_messages = TRUE) {
       if (is.null(api_key) || api_key == "") {
         stop("OpenAI API key not provided. Please set it as an environment variable 'OPENAI_API_KEY'.")
       }
+      
+      # Store additional model capability flags
+      private$supports_system_messages <- supports_system_messages
+      private$is_preview_model <- grepl("^o1-", model_name)
+      
       super$initialize(model_name, api_key, max_tokens, temperature)
     },
     
@@ -73,11 +82,36 @@ aigen_OpenAIModel <- R6Class(
       # - prompt: String containing the user's message
       # - system_message: String containing system instructions
       
-      # Prepare messages array
-      messages <- list(
-        list(role = "system", content = system_message),
-        list(role = "user", content = prompt)
+      # Prepare messages array based on model capabilities
+      messages <- if (private$supports_system_messages) {
+        list(
+          list(role = "system", content = system_message),
+          list(role = "user", content = prompt)
+        )
+      } else {
+        # For models that don't support system messages, combine with prompt
+        combined_prompt <- if (!is.null(system_message)) {
+          sprintf("%s\n\n%s", system_message, prompt)
+        } else {
+          prompt
+        }
+        list(list(role = "user", content = combined_prompt))
+      }
+      
+      # Prepare request body based on model type
+      body <- list(
+        model = private$model_name,
+        messages = messages
       )
+      
+      # Add parameters based on model type
+      if (private$is_preview_model) {
+        body$max_completion_tokens <- private$max_tokens
+        # Preview models only support default temperature
+      } else {
+        body$max_tokens <- private$max_tokens
+        body$temperature <- private$temperature
+      }
       
       response <- tryCatch({
         result <- POST(
@@ -86,12 +120,7 @@ aigen_OpenAIModel <- R6Class(
             Authorization = paste("Bearer", private$api_key),
             "Content-Type" = "application/json"
           ),
-          body = list(
-            model = private$model_name,
-            messages = messages,
-            temperature = private$temperature,
-            max_tokens = private$max_tokens
-          ),
+          body = body,
           encode = "json"
         )
         
@@ -99,6 +128,11 @@ aigen_OpenAIModel <- R6Class(
         parsed_response <- fromJSON(response_text, simplifyVector = FALSE)
         
         if (!is.null(parsed_response$error)) {
+          # Check for system message support error
+          if (grepl("does not support 'system'", parsed_response$error$message)) {
+            private$supports_system_messages <- FALSE
+            return(self$generate(prompt, system_message))
+          }
           stop(paste("API Error:", parsed_response$error$message))
         }
         
@@ -115,8 +149,14 @@ aigen_OpenAIModel <- R6Class(
       
       return(response)
     }
+  ),
+  private = list(
+    supports_system_messages = TRUE,
+    is_preview_model = FALSE
   )
 )
+
+
 
 
 #' @title AnthropicModel Class

@@ -744,7 +744,7 @@ print.ai_response <- function(x, ...) {
 #' @param data The dataset to analyze
 #' @return A formatted string containing the analysis results
 #' @export
-analyze_data <- function(data) {
+summarize_dt <- function(data) {
   # Input validation
   if (!is.data.frame(data) && !is.matrix(data)) {
     stop("Input must be a data frame or matrix")
