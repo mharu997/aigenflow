@@ -1,10 +1,15 @@
 #' @import httr
 #' @import jsonlite
 #' @import R6
-
+#' @import magrittr
+#' @import logger
+#' @import future
+library("jsonlite")
+library("future")
+library("logger")
 library("R6")
 library("httr")
-library("jsonlite")
+library("magrittr")
 
 
 ############################################
@@ -216,86 +221,103 @@ MistralEndpoint <- function(endpoint_url,
 #' @param x The value to check for `NULL`.
 #' @param y The fallback value if `x` is `NULL`.
 #' @return Returns `x` if it is not `NULL`, otherwise `y`.
+#' @private
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
 }
 
-#' Create a new Agent instance with optional tools
-#' 
-#' @param model An instance of a language model (OpenAI, Anthropic, etc.)
-#' @param memory Optional ConversationMemory instance for managing chat history
-#' @param tools Named list of functions to use as tools
-#' @param tools_env Environment to look for tool functions, defaults to parent frame
-#' @param validate_tools Logical indicating whether to validate tool functions
-#' @return An Agent instance
+#' Initialize an Advanced Conversational Agent
+#'
+#' @param model An instance of `aigen_LanguageModel`. This is the language model the agent will use.
+#' @param name A character string representing the agent's name. Default is "Assistant".
+#' @param short_term_memory An integer specifying the maximum number of messages to retain in short-term memory. Default is 20.
+#' @param tools A named list of functions representing tools the agent can utilize. Default is an empty list.
+#' @param log_file A character string specifying the path to the log file. If NULL, logging is disabled. Default is NULL.
+#' @param debug_mode A logical value indicating whether to enable debug mode. If TRUE, logs are printed to the console. Default is FALSE.
+#'
+#' @return An instance of `AdvancedAgent`.
 #' @examples
-#' # Simple initialization with a model
-#' model <- OpenAIModel("gpt-4")
-#' agent <- Agent_new(model)
+#' \dontrun{
+#' # Assuming LimitedConversationMemory and aigen_LanguageModel are defined elsewhere
 #' 
-#' # Initialize with tools
-#' sum_two <- function(a, b) a + b
-#' analyze_data <- function(data, col) summary(data[[col]])
-#' agent <- Agent_new(
-#'   model = model,
-#'   tools = c("sum" = "sum_two", 
-#'             "analyze" = "analyze_data")
+#' # Initialize a language model (placeholder)
+#' language_model <- OpenAIModel("gpt-4o")
+#' 
+#' # Define some tools
+#' summarize_tool <- function(text) {
+#'   summary <- summary(text)
+#'   return(summary)
+#' }
+#' 
+#' stats_tool <- function(data) {
+#'   stats <- summary(data)
+#'   return(stats)
+#' }
+#' 
+#' # Initialize the agent using the wrapper
+#' agent <- Agent(
+#'   model = language_model,
+#'   name = "DataAssistant",
+#'   short_term_memory = 30,
+#'   tools = list(
+#'     summarize = summarize_tool,
+#'     stats = stats_tool
+#'   ),
+#'   log_file = "agent.txt",
+#'   debug_mode = TRUE
 #' )
 #' 
-#' @export
-Agent <- function(model, name = NULL,
-                      memory = NULL,
-                      tools = NULL,
-                      tools_env = parent.frame(),
-                      validate_tools = TRUE) {
-  # Validate model
+#' # Interact with the agent
+#' response <- agent$chat("Analyze my dataset for trends.")
+#' print(response)
+#' }
+Agent <- function(model,
+                             name = "Assistant",
+                             short_term_memory = 20,
+                             tools = list(),
+                             log_file = NULL,
+                             debug_mode = FALSE) {
+  
+  # Input Validation
+  if (missing(model)) {
+    stop("Parameter 'model' is required and must be an instance of aigen_LanguageModel.")
+  }
+  
   if (!inherits(model, "aigen_LanguageModel")) {
-    stop("model must be an instance of aigen_LanguageModel")
+    stop("Parameter 'model' must be an instance of aigen_LanguageModel.")
   }
   
-  # Process tools if provided
-  tool_list <- list()
-  if (!is.null(tools)) {
-    # Handle different tool input formats
-    if (is.list(tools) && all(sapply(tools, is.function))) {
-      # Direct list of functions
-      tool_list <- tools
-    } else if (is.character(tools)) {
-      # Character vector of function names
-      tool_list <- lapply(tools, function(fname) {
-        if (exists(fname, envir = tools_env, mode = "function")) {
-          get(fname, envir = tools_env, mode = "function")
-        } else {
-          stop(sprintf("Function '%s' not found", fname))
-        }
-      })
-      names(tool_list) <- names(tools) %||% tools
-    } else {
-      stop("tools must be either a named list of functions or a character vector of function names")
-    }
-    
-    # Validate tools if requested
-    if (validate_tools) {
-      invalid_tools <- sapply(names(tool_list), function(name) {
-        tool <- tool_list[[name]]
-        !is.function(tool) || is.null(formals(tool))
-      })
-      
-      if (any(invalid_tools)) {
-        stop(sprintf(
-          "Invalid tools found: %s", 
-          paste(names(tool_list)[invalid_tools], collapse = ", ")
-        ))
-      }
-    }
+  if (!is.character(name) || length(name) != 1) {
+    stop("Parameter 'name' must be a single character string.")
   }
   
-  # Create and return agent instance
-  aigen_Agent$new(
+  if (!is.numeric(short_term_memory) || length(short_term_memory) != 1 || short_term_memory <= 0) {
+    stop("Parameter 'short_term_memory' must be a positive integer.")
+  }
+  
+  if (!is.list(tools) || (length(tools) > 0 && is.null(names(tools)))) {
+    stop("Parameter 'tools' must be a named list of functions.")
+  }
+  
+  if (!is.null(log_file) && (!is.character(log_file) || length(log_file) != 1)) {
+    stop("Parameter 'log_file' must be a single character string or NULL.")
+  }
+  
+  if (!is.logical(debug_mode) || length(debug_mode) != 1) {
+    stop("Parameter 'debug_mode' must be a single logical value (TRUE or FALSE).")
+  }
+  
+  # Initialize the AdvancedAgent
+  agent <- aigen_Agent$new(
     model = model,
-    memory = memory,
-    tools = tool_list
+    name = name,
+    short_term_memory = short_term_memory,
+    tools = tools,
+    log_file = log_file,
+    debug_mode = debug_mode
   )
+  
+  return(agent)
 }
 
 #' Add tools to an existing Agent instance
@@ -337,24 +359,193 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 
 
 
+
+
+
+####################################################
+# Function to enable %>% operators with Agents
+####################################################
+
+#' Enable piping for AI models, agents, and data
+#' @importFrom magrittr %>%
+#' Make models pipe-friendly
+#' @private
+`%>%.aigen_LanguageModel` <- function(model, f, ...) {
+  if (inherits(f, "function") && identical(f, Agent)) {
+    f(model, ...)
+  } else {
+    magrittr::freduce(model, list(f))
+  }
+}
+
+#' Make agents pipe-friendly
+#' @private
+`%>%.aigen_Agent` <- function(agent, f, ...) {
+  if (is.function(f) && identical(f, ask)) {
+    f(agent, ...)
+  } else {
+    magrittr::freduce(agent, list(f))
+  }
+}
+
+
+
+#' Response object for chaining
+#' @export
+ai_response <- function(agent, response, history = list()) {
+  structure(
+    list(
+      agent = agent,
+      response = response,
+      history = history  # Track chain of responses
+    ),
+    class = "ai_response"
+  )
+}
+
+
+#' Ask function for direct questions with string interpolation
+#' @param agent An Agent instance
+#' @param template Question template with variables in curly braces
+#' @param ... Variables to interpolate into template
+#' @param system_prompt Optional system instructions
+#' @param context_window Number of messages to include for context
+#' @param verbose Whether to print detailed output
+#' @export
+ask <- function(agent, user_input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
+  if (!inherits(agent, "aigen_Agent")) {
+    stop("First argument must be an Agent")
+  }
+  
+  # Check if we're being called from mutate
+  in_mutate <- inherits(user_input, "numeric") || inherits(user_input, "character") && length(user_input) > 1
+  
+  if (in_mutate) {
+    # Vectorized operation for mutate
+    return(vapply(user_input, function(p) {
+      response <- agent$chat(p, system_prompt, context_window)
+      if (verbose) {
+        cat("\n=== Ask:", agent$get_name(), "===\n")
+        cat("Input:", p, "\n")
+        if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+        cat("Response:\n", response, "\n")
+        cat("===============================\n")
+      }
+      response
+    }, character(1)))
+  } else {
+    # Regular single prompt operation
+    response <- agent$chat(user_input, system_prompt, context_window)
+    
+    if (verbose) {
+      cat("\n=== Ask:", agent$get_name(), "===\n")
+      cat("Input:", user_input, "\n")
+      if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+      cat("Response:\n", response, "\n")
+      cat("===============================\n")
+    }
+    
+    # Return just the response when in a mutate context
+    if (identical(topenv(), .GlobalEnv)) {
+      ai_response(agent, response)
+    } else {
+      response
+    }
+  }
+}
+
+
+#' Get response history
+#' @export
+get_history <- function(x) {
+  if (inherits(x, "ai_response")) {
+    x$history
+  } else {
+    NULL
+  }
+}
+
+#' Get just the response from an ai_response object
+#' @export
+get_response <- function(x) {
+  if (inherits(x, "ai_response")) {
+    x$response
+  } else {
+    x  # Return unchanged if not ai_response
+  }
+}
+
+
+
+
+
+
+
+
+
 ######################################################
 # Model Orchestrators (Orchestrate, Design, Execute)
 ######################################################
-#' Create a new orchestrator instance with predefined agents and workflows
-#'
-#' @param agents Named list of agents or agent configurations
+############################################
+# High-Level Workflow API
+############################################
+
+#' Create a workflow step configuration
+#' @param name Character string identifying the step
+#' @param agent Character string identifying the agent to use
+#' @param prompt The prompt template for this step
+#' @param system Optional system prompt for the step
+#' @param pass_to_next Logical, whether to pass output to next step
+#' @return A list containing step configuration
+#' @export 
+Step <- function(name, agent, prompt, 
+                 system = NULL, 
+                 pass_to_next = FALSE) {
+  if (!is.character(name) || !is.character(agent) || !is.character(prompt)) {
+    stop("name, agent, and prompt must be character strings")
+  }
+  
+  list(
+    name = name,
+    agent = agent,
+    prompt = prompt,
+    system_prompt = system,
+    output_to_input = pass_to_next
+  )
+}
+
+#' Create a workflow definition
+#' @param ... Step configurations created by Step()
+#' @return A list containing the workflow definition
+#' @export
+Workflow <- function(...) {
+  steps <- list(...)
+  if (length(steps) == 0) {
+    stop("Workflow must contain at least one step")
+  }
+  
+  # Validate steps
+  if (!all(sapply(steps, function(s) {
+    all(c("name", "agent", "prompt") %in% names(s))
+  }))) {
+    stop("Each step must be created using the Step() function")
+  }
+  
+  list(steps = steps)
+}
+
+#' Create an orchestrated flow with agents and workflows
+#' @param agents Named list of Agent instances or configurations
 #' @param workflows Named list of workflow definitions
 #' @return An Orchestrator instance
 #' @export
-OrchestrateFlow <- function(agents = list(), workflows = list()) {
+CreateFlow <- function(agents = list(), workflows = list()) {
+  # Handle single agent case
+  if (inherits(agents, "aigen_Agent")) {
+    agents <- list(default = agents)
+  }
   
-  # Creates an orchestration system that manages multiple agents and their interactions.
-  # Arguments:
-  #   - agents: Named list of agent configurations, where each agent can be either:
-  #             - An existing Agent instance
-  #             - A configuration list with:
-  #  - model: Language model instance (OpenAIModel, AnthropicModel, etc.)
-  #  - tools: Optional named list/vector of functions
+  # Process agents
   agent_instances <- lapply(names(agents), function(name) {
     config <- agents[[name]]
     
@@ -375,79 +566,42 @@ OrchestrateFlow <- function(agents = list(), workflows = list()) {
   })
   names(agent_instances) <- names(agents)
   
-  Orchestrator$new(
-    agents = agent_instances,
-    workflows = workflows
-  )
-}
-
-#' Design an agent workflow configuration
-#'
-#' @param orchestrator An Orchestrator instance
-#' @param name Name of the workflow
-#' @param steps List of workflow step definitions
-#' @param conditions Optional conditions for workflow transitions
-#' @return The modified Orchestrator instance (invisibly)
-#' @export
-DesignFlow <- function(orchestrator, name, steps, conditions = NULL) {
-  if (!inherits(orchestrator, "Orchestrator")) {
-    stop("orchestrator must be an Orchestrator instance")
+  # Create orchestrator
+  orchestrator <- Orchestrator$new(agents = agent_instances)
+  
+  # Define workflows
+  if (length(workflows) > 0) {
+    for (name in names(workflows)) {
+      workflow <- workflows[[name]]
+      orchestrator$define_workflow(
+        name = name,
+        steps = workflow$steps
+      )
+    }
   }
   
-  # Defines a workflow that coordinates how agents work together.
-  # orchestrator: Orchestrator instance from OrchestrateFlow()
-  #   - name: Character string identifying the workflow
-  #   - steps: List of workflow steps, each containing:
-  #   
-  #       - name: Step identifier
-  #       - agent: Name of agent to use (must match agent names in OrchestrateFlow)
-  #       - prompt: Template for agent instruction
-  #       - system_prompt: Optional system context
-  #       - output_to_input: Logical, whether to pass output to next step
-  #       - conditions: Optional list of conditional expressions for step execution
-  processed_steps <- lapply(steps, function(step) {
-    if (!is.list(step) || is.null(step$name) || is.null(step$agent)) {
-      stop("Each step must be a list with 'name' and 'agent' fields")
-    }
-    
-    step$prompt <- step$prompt %||% "{{input}}"
-    step$output_to_input <- step$output_to_input %||% FALSE
-    
-    step
-  })
-  
-  orchestrator$define_workflow(
-    name = name,
-    steps = processed_steps,
-    conditions = conditions
-  )
-  
-  invisible(orchestrator)
+  orchestrator
 }
 
-#' Execute a workflow with orchestrated agents
-#'
+#' Execute a workflow
 #' @param orchestrator An Orchestrator instance
-#' @param workflow Name of the workflow to run
+#' @param workflow Name of the workflow to execute
 #' @param input Input data for the workflow
 #' @param context Optional context data
-#' @return Results of the workflow execution
+#' @return Results of workflow execution
 #' @export
-ExecuteFlow <- function(orchestrator, workflow, input, context = list()) {
+RunFlow <- function(orchestrator, workflow, input, context = list()) {
   if (!inherits(orchestrator, "Orchestrator")) {
     stop("orchestrator must be an Orchestrator instance")
   }
-  # Runs a designed workflow with specified inputs.
-  #       - orchestrator: Orchestrator instance from OrchestrateFlow()
-  #       - workflow: Name of workflow to execute
-  #       - input: Initial data for the workflow
-  #       - context: Optional list of contextual information available to all steps
+  
   orchestrator$execute_workflow(
     workflow_name = workflow,
     initial_input = input,
     context = context
   )
 }
+
 
 
 #############################################
@@ -662,7 +816,7 @@ get_analysis_tools <- function() {
 #' statistics, expert interpretation, and a user-friendly summary. The function uses
 #' multiple specialized AI agents to analyze, interpret, and communicate findings.
 #' 
-#' @param model An instance of aigen_LanguageModel
+#' @param model An instance of LanguageModel
 #' @param data A data frame or matrix to analyze
 #' @param data_question Specific question or focus for the analysis
 #' @param system_prompt Instructions for the analytical approach
@@ -715,7 +869,7 @@ aigen_report <- function(model,
   # Initialize analysis agent with tools
   data_agent <- aigen_Agent$new(
     model = model,
-    tools = get_analysis_tools()
+    tools = list(analyze = analyze_data)
   )
   
   # Get raw analysis

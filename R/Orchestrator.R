@@ -4,7 +4,7 @@ library("jsonlite")
 
 #' @title Orchestrator Class
 #' @description Manages interactions and workflows between multiple agents
-#' @export
+#' @private
 Orchestrator <- R6Class(
   "Orchestrator",
   public = list(
@@ -131,7 +131,7 @@ Orchestrator <- R6Class(
       for (i in seq_along(workflow$steps)) {
         step <- workflow$steps[[i]]
         
-        # Check if conditions are met for this step
+        # Check conditions
         if (!is.null(workflow$conditions)) {
           condition <- workflow$conditions[[i]]
           if (!is.null(condition) && !private$evaluate_condition(condition, context, results)) {
@@ -139,19 +139,31 @@ Orchestrator <- R6Class(
           }
         }
         
-        # Execute the step
+        # Get the agent
         agent <- private$agents[[step$agent]]
         
-        # Prepare the system prompt if provided
+        # Prepare system prompt
         system_prompt <- if (!is.null(step$system_prompt)) {
           private$prepare_prompt(step$system_prompt, context, results)
         } else {
           NULL
         }
         
-        # Execute the step and store result
+        # Build comprehensive prompt with context
+        full_prompt <- if (i == 1) {
+          # First step - include original input
+          sprintf("%s\n\nInput Data:\n%s", step$prompt, private$format_input(current_input))
+        } else {
+          # Subsequent steps - include previous results
+          previous_results <- paste(sapply(names(results), function(name) {
+            sprintf("Results from %s:\n%s", name, results[[name]])
+          }), collapse = "\n\n")
+          sprintf("%s\n\n%s", step$prompt, previous_results)
+        }
+        
+        # Execute the step
         result <- agent$chat(
-          user_input = private$prepare_prompt(step$prompt, context, list(input = current_input, results = results)),
+          user_input = full_prompt,
           system_prompt = system_prompt
         )
         
@@ -174,6 +186,27 @@ Orchestrator <- R6Class(
       }
       
       return(results)
+    },
+    
+    # Add helper function to format input data
+    format_input = function(input) {
+      if (is.data.frame(input)) {
+        # For data frames, provide a summary
+        dims <- dim(input)
+        cols <- colnames(input)
+        sprintf("Data Frame: %d rows × %d columns\nColumns: %s\n\nFirst few rows:\n%s",
+                dims[1], dims[2],
+                paste(cols, collapse = ", "),
+                paste(capture.output(head(input)), collapse = "\n"))
+      } else if (is.list(input)) {
+        # For lists, format each element
+        paste(sapply(names(input), function(n) {
+          sprintf("%s:\n%s", n, private$format_input(input[[n]]))
+        }), collapse = "\n\n")
+      } else {
+        # For other types, convert to string
+        as.character(input)
+      }
     },
     
     prepare_prompt = function(template, context, data) {

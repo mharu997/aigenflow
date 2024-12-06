@@ -5,7 +5,7 @@ library("ggplot2")
 
 #' @title Memory Class
 #' @description Memory class for storing and managing memory data.
-#' @export
+#' @private
 ########################################
 # Base Memory Class
 ########################################
@@ -49,7 +49,7 @@ Memory <- R6Class(
 
 #' @title ConversationMemory Class
 #' @description Memory class for store and manage conversation history.
-#' @export
+#' @private
 ########################################
 # Conversation Memory Implementation
 ########################################
@@ -91,7 +91,7 @@ ConversationMemory <- R6Class(
 
 #' @title LimitedConversationMemory Class
 #' @description Memory class for storing conversation history with a size limit
-#' @export
+#' @private
 LimitedConversationMemory <- R6::R6Class(
   "LimitedConversationMemory",
   inherit = ConversationMemory,
