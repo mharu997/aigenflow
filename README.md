@@ -59,7 +59,7 @@ model <- OpenAIModel(
   temperature = 0.7
 )
 
-# Create a basic agent with conversation memory
+# Create a basic agent with memory, logging, and debugging
 agent <- Agent(
   model = model,
   name = "Assistant",
