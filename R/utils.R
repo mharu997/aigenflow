@@ -390,18 +390,59 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 
 
 
-#' Response object for chaining
+#' Make ai_response objects pipe-friendly
+#' @private
+`%>%.ai_response` <- function(x, f, ...) {
+  if (inherits(f, "function") && identical(f, ask)) {
+    # Extract the agent from the ai_response and pass it to ask
+    result <- f(x$agent, ...)
+    
+    # Update history
+    new_history <- c(x$history, list(x$response))
+    
+    # Return new ai_response with updated history
+    structure(
+      list(
+        agent = x$agent,
+        response = result$response,
+        history = new_history
+      ),
+      class = "ai_response"
+    )
+  } else {
+    magrittr::freduce(x, list(f))
+  }
+}
+
+#' Create an ai_response object
 #' @export
 ai_response <- function(agent, response, history = list()) {
+  # If no history provided, initialize with current response
+  if (length(history) == 0) {
+    history <- list(list(
+      role = "assistant",
+      content = response,
+      timestamp = Sys.time()
+    ))
+  } else {
+    # Append new response to existing history
+    history <- c(history, list(list(
+      role = "assistant",
+      content = response,
+      timestamp = Sys.time()
+    )))
+  }
+  
   structure(
     list(
       agent = agent,
       response = response,
-      history = history  # Track chain of responses
+      history = history
     ),
     class = "ai_response"
   )
 }
+
 
 
 #' Ask function for direct questions with string interpolation
@@ -412,17 +453,22 @@ ai_response <- function(agent, response, history = list()) {
 #' @param context_window Number of messages to include for context
 #' @param verbose Whether to print detailed output
 #' @export
-ask <- function(agent, user_input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
-  if (!inherits(agent, "aigen_Agent")) {
-    stop("First argument must be an Agent")
-  }
-  
+# Modify the ask function to support both mutate and conversation history
+ask <- function(agent_or_response, user_input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
   # Check if we're being called from mutate
-  in_mutate <- inherits(user_input, "numeric") || inherits(user_input, "character") && length(user_input) > 1
+  in_mutate <- inherits(user_input, "numeric") || 
+    (inherits(user_input, "character") && length(user_input) > 1)
   
   if (in_mutate) {
-    # Vectorized operation for mutate
+    # Original mutate functionality
     return(vapply(user_input, function(p) {
+      # Extract agent from either type of input
+      agent <- if (inherits(agent_or_response, "ai_response")) {
+        agent_or_response$agent
+      } else {
+        agent_or_response
+      }
+      
       response <- agent$chat(p, system_prompt, context_window)
       if (verbose) {
         cat("\n=== Ask:", agent$get_name(), "===\n")
@@ -434,7 +480,25 @@ ask <- function(agent, user_input, system_prompt = NULL, context_window = 5, ver
       response
     }, character(1)))
   } else {
-    # Regular single prompt operation
+    # Extract agent and history based on input type
+    if (inherits(agent_or_response, "ai_response")) {
+      agent <- agent_or_response$agent
+      prev_history <- agent_or_response$history
+    } else if (inherits(agent_or_response, "aigen_Agent")) {
+      agent <- agent_or_response
+      prev_history <- list()
+    } else {
+      stop("First argument must be either an Agent or ai_response object")
+    }
+    
+    # Add user input to history
+    current_history <- c(prev_history, list(list(
+      role = "user",
+      content = user_input,
+      timestamp = Sys.time()
+    )))
+    
+    # Generate response
     response <- agent$chat(user_input, system_prompt, context_window)
     
     if (verbose) {
@@ -445,10 +509,12 @@ ask <- function(agent, user_input, system_prompt = NULL, context_window = 5, ver
       cat("===============================\n")
     }
     
-    # Return just the response when in a mutate context
+    # Check if we're in a mutate context
     if (identical(topenv(), .GlobalEnv)) {
-      ai_response(agent, response)
+      # Return ai_response object with history for interactive use
+      ai_response(agent, response, current_history)
     } else {
+      # Return just the response for mutate operations
       response
     }
   }
@@ -459,7 +525,14 @@ ask <- function(agent, user_input, system_prompt = NULL, context_window = 5, ver
 #' @export
 get_history <- function(x) {
   if (inherits(x, "ai_response")) {
-    x$history
+    # Return formatted history with timestamps
+    lapply(x$history, function(entry) {
+      list(
+        timestamp = format(entry$timestamp),
+        role = entry$role,
+        content = entry$content
+      )
+    })
   } else {
     NULL
   }
@@ -688,103 +761,7 @@ analyze_data <- function(data) {
   return(paste(result, collapse = "\n"))
 }
 
-#' Format text into different styles and structures
-#' @param text The text to format
-#' @param style The output style ("markdown", "bullet", "paragraph", "summary")
-#' @param max_length Optional maximum length for summaries
-#' @return Formatted text string
-#' @export
-format_text <- function(text, 
-                        style = c("markdown", "bullet", "paragraph", "summary"),
-                        max_length = NULL) {
-  
-  # Validate inputs
-  if (!is.character(text)) {
-    stop("text must be a character string")
-  }
-  style <- match.arg(style)
-  
-  # Clean the text
-  text <- trimws(text)
-  
-  # Format based on style
-  result <- switch(style,
-                   "markdown" = {
-                     # Convert to markdown with headers and emphasis
-                     lines <- unlist(strsplit(text, "\n"))
-                     
-                     # Add markdown formatting
-                     formatted <- sapply(lines, function(line) {
-                       if (grepl("^[A-Z][A-Za-z\\s]+:.*$", line)) {
-                         # Convert "Title: content" to markdown header
-                         parts <- strsplit(line, ":", fixed = TRUE)[[1]]
-                         sprintf("## %s\n%s", trimws(parts[1]), trimws(parts[2]))
-                       } else if (grepl("^[0-9]+\\.", line)) {
-                         # Already numbered, just add spacing
-                         sprintf("%s\n", line)
-                       } else if (nchar(trimws(line)) > 0) {
-                         # Regular line
-                         sprintf("%s\n", line)
-                       } else {
-                         # Empty line
-                         ""
-                       }
-                     })
-                     
-                     paste(formatted, collapse = "\n")
-                   },
-                   
-                   "bullet" = {
-                     # Convert to bullet points
-                     lines <- unlist(strsplit(text, "\n"))
-                     lines <- lines[nchar(trimws(lines)) > 0]  # Remove empty lines
-                     
-                     # Add bullets
-                     formatted <- sprintf("- %s", lines)
-                     paste(formatted, collapse = "\n")
-                   },
-                   
-                   "paragraph" = {
-                     # Format as clean paragraphs
-                     # Split on double newlines to separate paragraphs
-                     paras <- strsplit(text, "\n\n+")[[1]]
-                     
-                     # Clean each paragraph
-                     formatted <- sapply(paras, function(p) {
-                       # Replace single newlines with spaces
-                       p <- gsub("\n", " ", p)
-                       # Clean up multiple spaces
-                       p <- gsub("\\s+", " ", p)
-                       # Trim and add paragraph break
-                       sprintf("%s\n\n", trimws(p))
-                     })
-                     
-                     paste(formatted, collapse = "")
-                   },
-                   
-                   "summary" = {
-                     # Create a brief summary
-                     # Remove extra whitespace
-                     text <- gsub("\\s+", " ", text)
-                     text <- trimws(text)
-                     
-                     if (!is.null(max_length) && nchar(text) > max_length) {
-                       # Truncate to max_length at word boundary
-                       truncated <- substr(text, 1, max_length)
-                       # Find last complete word
-                       last_space <- regexpr("\\s[^\\s]*$", truncated)[1]
-                       if (last_space > 0) {
-                         truncated <- substr(truncated, 1, last_space)
-                       }
-                       sprintf("%s...", trimws(truncated))
-                     } else {
-                       text
-                     }
-                   }
-  )
-  
-  return(result)
-}
+
 
 #' @title Create analysis tools for agent
 #' @description Creates a list of analysis tools that can be passed to an agent
@@ -807,14 +784,14 @@ get_analysis_tools <- function() {
 }
 
 
-# This function demonstrates how agents with specialized tools can collaborate.
-# It performs data analysis using the data agent and generates a summary report using the writer agent.
-#' Generate a comprehensive data analysis report
+#' Generate a comprehensive, research-grade data analysis report
 #' 
 #' @description 
-#' Creates a detailed, multi-layered report from data analysis, including technical 
-#' statistics, expert interpretation, and a user-friendly summary. The function uses
-#' multiple specialized AI agents to analyze, interpret, and communicate findings.
+#' Creates a detailed, publication-quality report from data analysis, incorporating
+#' rigorous statistical analysis, expert interpretation, and clear communication.
+#' The function employs specialized AI agents to conduct thorough analysis,
+#' interpret findings, and present results with academic rigor while maintaining
+#' accessibility.
 #' 
 #' @param model An instance of LanguageModel
 #' @param data A data frame or matrix to analyze
@@ -823,30 +800,18 @@ get_analysis_tools <- function() {
 #' @param output_format Output format ("text" or "markdown", default: "markdown")
 #' 
 #' @return A list containing:
-#'   \item{raw_analysis}{Technical statistical analysis}
-#'   \item{interpretation}{Expert interpretation of findings}
-#'   \item{final_report}{User-friendly report}
+#'   \item{raw_analysis}{Detailed statistical analysis with comprehensive metrics}
+#'   \item{interpretation}{Expert interpretation with statistical significance}
+#'   \item{final_report}{Clear, structured report with key findings}
 #'   \item{metadata}{Analysis metadata including timestamps and parameters}
 #' 
-#' @examples
-#' \dontrun{
-#' model <- OpenAIModel("gpt-4")
-#' results <- summarize_and_report(
-#'   model = model,
-#'   data = iris,
-#'   data_question = "What distinguishes different iris species?",
-#'   system_prompt = "You are a botanist and data scientist."
-#' )
-#' cat(results$final_report)
-#' }
-#' 
-#' @export
 aigen_report <- function(model, 
                          data, 
                          data_question = "What are the key insights from this data?",
-                         system_prompt = "You are a data analyst. Interpret these statistics and provide key insights.") {
+                         system_prompt = NULL,
+                         output_format = "markdown") {
   
-  # Validate inputs
+  # Input validation
   if (!inherits(model, "aigen_LanguageModel")) {
     stop("'model' must be an instance of aigen_LanguageModel")
   }
@@ -854,57 +819,100 @@ aigen_report <- function(model,
     stop("'data' must be a data frame or matrix")
   }
   
-  # Initialize metadata
+  # Enhanced metadata capturing
   metadata <- list(
     timestamp = Sys.time(),
     data_dimensions = dim(data),
     data_columns = colnames(data),
+    column_types = sapply(data, class),
+    missing_data = colSums(is.na(data)),
     question = data_question,
-    data = data,  # Store the actual data
+    data_summary = summary(data),
     analysis_parameters = list(
-      system_prompt = system_prompt
+      system_prompt = system_prompt,
+      output_format = output_format
     )
   )
   
-  # Initialize analysis agent with tools
+  # Initialize analysis agent with enhanced tools
   data_agent <- aigen_Agent$new(
     model = model,
-    tools = list(analyze = analyze_data)
+    tools = list(
+      analyze = analyze_data,
+      summarize = summary,
+      correlate = cor
+    )
   )
   
-  # Get raw analysis
+  # Detailed statistical analysis with enhanced context
   raw_analysis <- tryCatch({
     data_agent$use_tool("analyze", data)
   }, error = function(e) {
-    stop("Analysis failed: ", e$message)
+    stop("Statistical analysis failed: ", e$message)
   })
   
-  # Get interpretation
-  interpretation <- data_agent$chat(
-    user_input = paste(
-      "Here is the statistical analysis of the data:\n\n",
-      raw_analysis,
-      "\n\nBased on these statistics, ",
-      data_question
-    ),
-    system_prompt = system_prompt
+  # Expert interpretation with research focus
+  interpretation_prompt <- paste(
+    "As a research statistician, analyze this dataset with academic rigor:\n\n",
+    raw_analysis,
+    "\n\nFocus your analysis on the following aspects:",
+    "\n1. Statistical Significance: Identify and explain significant patterns",
+    "\n2. Data Distribution: Analyze the distribution of key variables",
+    "\n3. Relationships: Examine correlations and potential causal relationships",
+    "\n4. Anomalies: Identify and explain any outliers or unusual patterns",
+    "\n5. Limitations: Discuss any data limitations or potential biases",
+    "\n\nBased on these statistics and considering the question: ",
+    data_question
   )
   
-  # Get final report
+  interpretation <- data_agent$chat(
+    user_input = interpretation_prompt,
+    system_prompt = "You are a senior research statistician with expertise in data analysis. 
+    Provide a thorough, academically rigorous interpretation of the data. 
+    Focus on statistical significance, methodological soundness, and meaningful patterns. 
+    Be precise in your language and support conclusions with specific evidence from the data."
+  )
+  
+  # Enhanced report generation with structured output
+  report_prompt <- paste(
+    "Transform this technical analysis into a clear, comprehensive report:\n\n",
+    interpretation,
+    "\n\nStructure the report as follows:",
+    "\n1. Executive Summary (4-5 sentence paragraph of key findings)",
+    "\n2. Methodology & Data Overview",
+    "\n3. Key Findings",
+    "  - Primary Insights (statistically significant findings)",
+    "  - Secondary Observations (interesting patterns)",
+    "  - Data Relationships (correlations and potential causations)",
+    "\n4. Limitations & Considerations",
+    "\n5. Actionable Insights & Recommendations",
+    "\n\nEnsure the report is:",
+    "- Precise and evidence-based",
+    "- Free of unnecessary jargon",
+    "- Focused on meaningful insights",
+    "- Actionable for decision-making"
+  )
+  
   writer_agent <- aigen_Agent$new(model = model)
   final_report <- writer_agent$chat(
-    user_input = paste(
-      "Here is a technical analysis of some data:\n\n",
-      interpretation,
-      "\n\nPlease convert this into a clear, engaging summary for a general audience."
-    ),
-    system_prompt = "You are a technical writer. Create clear, engaging summaries of technical analyses."
+    user_input = report_prompt,
+    system_prompt = "You are an expert research communicator with a deep understanding of 
+    statistical analysis and scientific writing. Your goal is to translate complex 
+    technical findings into clear, actionable insights while maintaining scientific 
+    rigor. Focus on precision, clarity, and meaningful interpretation of the data. 
+    Avoid speculation and unsupported conclusions. Structure your writing to be 
+    both academically sound and practically useful."
   )
   
-  # Add execution time to metadata
+  # Add execution time and analysis quality metrics to metadata
   metadata$execution_time <- difftime(Sys.time(), metadata$timestamp, units = "secs")
+  metadata$analysis_coverage <- list(
+    variables_analyzed = length(metadata$column_types),
+    missing_data_handled = any(metadata$missing_data > 0),
+    correlation_analysis = "correlate" %in% names(data_agent$tools)
+  )
   
-  # Create and return report object
+  # Create and return enhanced report object
   structure(
     list(
       raw_analysis = raw_analysis,
@@ -916,30 +924,326 @@ aigen_report <- function(model,
   )
 }
 
-
-#' Print method for aigen_report objects
+#' Print method for aigen_report objects with enhanced formatting
 #' @export
 print.aigen_report <- function(x, ...) {
-  cat("\n=== Data Analysis Report ===\n\n")
-  cat("Generated:", format(x$metadata$timestamp), "\n")
-  cat("Analysis Duration:", round(x$metadata$execution_time, 2), "seconds\n")
-  cat("Data Dimensions:", paste(x$metadata$data_dimensions, collapse = " x "), "\n")
-  cat("\n--- Final Report ---\n\n")
+  cat("\n=== Research Analysis Report ===\n")
+  cat("\nAnalysis Generated:", format(x$metadata$timestamp))
+  cat("\nExecution Time:", round(x$metadata$execution_time, 2), "seconds")
+  cat("\nData Dimensions:", paste(x$metadata$data_dimensions, collapse = " x "))
+  cat("\n\n=== Executive Summary ===\n\n")
+  
+  # Extract and print executive summary (first paragraph of final report)
+  summary_lines <- strsplit(x$final_report, "\n")[[1]]
+  exec_summary <- summary_lines[which(nchar(summary_lines) > 0)[1]]
+  cat(exec_summary)
+  
+  cat("\n\n=== Full Report ===\n\n")
   cat(x$final_report)
+  
   cat("\n\nUse $raw_analysis, $interpretation, or $final_report to access specific components.\n")
 }
 
-#' Summary method for aigen_report objects
+#' Enhanced summary method for aigen_report objects
 #' @export
 summary.aigen_report <- function(object, ...) {
-  cat("\n=== Analysis Summary ===\n\n")
-  cat("Analysis Parameters:\n")
-  cat("- Data Dimensions:", paste(object$metadata$data_dimensions, collapse = " x "), "\n")
-  cat("- Analysis Question:", object$metadata$question, "\n")
-  cat("- Analysis Time:", format(object$metadata$timestamp), "\n")
-  cat("\nKey Components:\n")
-  cat("1. Raw Analysis (", nchar(object$raw_analysis), " characters)\n")
-  cat("2. Expert Interpretation (", nchar(object$interpretation), " characters)\n")
-  cat("3. Final Report (", nchar(object$final_report), " characters)\n")
+  cat("\n=== Analysis Overview ===\n")
+  cat("\nAnalysis Parameters:")
+  cat("\n- Data Dimensions:", paste(object$metadata$data_dimensions, collapse = " x"))
+  cat("\n- Variables Analyzed:", length(object$metadata$column_types))
+  cat("\n- Analysis Question:", object$metadata$question)
+  cat("\n- Execution Time:", format(object$metadata$execution_time))
+  
+  cat("\n\nData Quality Metrics:")
+  cat("\n- Missing Data Present:", any(object$metadata$missing_data > 0))
+  cat("\n- Column Types:", paste(unique(object$metadata$column_types), collapse = ", "))
+  
+  cat("\n\nReport Components:")
+  cat("\n1. Raw Analysis:", nchar(object$raw_analysis), "characters")
+  cat("\n2. Expert Interpretation:", nchar(object$interpretation), "characters")
+  cat("\n3. Final Report:", nchar(object$final_report), "characters")
+  
+  cat("\n\nUse print() for full report or access components directly.\n")
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+#' Ollama model management utilities
+#' @description Functions for managing local Ollama models independently of model instances
+#' @keywords internal
+
+#' List all available Ollama models with enhanced error handling
+#' @param base_url Base URL for Ollama API
+#' @param include_details Include additional model details in output
+#' @return Data frame of installed models
+#' @export
+ollama_models <- function(base_url = "http://localhost:11434/api", include_details = FALSE) {
+  # Load crayon for colors
+  if (!requireNamespace("crayon", quietly = TRUE)) {
+    install.packages("crayon")
+    library(crayon)
+  }
+  
+  # Define color styles
+  header_style <- function(x) crayon::bold(crayon::blue(x))
+  error_style <- function(x) crayon::red(paste("✗", x))
+  detail_style <- function(x) crayon::silver(x)
+  
+  tryCatch({
+    result <- httr::GET(
+      url = file.path(base_url, "tags"),
+      httr::config(timeout = 30)
+    )
+    
+    if (result$status_code != 200) {
+      stop("API request failed with status: ", result$status_code)
+    }
+    
+    # Parse JSON response
+    response_text <- rawToChar(result$content)
+    parsed <- jsonlite::fromJSON(response_text)
+    
+    # Filter out NA values and create data frame
+    valid_models <- !is.na(parsed$models$name)
+    models_df <- data.frame(
+      name = parsed$models$name[valid_models],
+      model = parsed$models$model[valid_models],
+      modified = parsed$models$modified_at[valid_models],
+      size_gb = round(parsed$models$size[valid_models] / (1024^3), 2),
+      stringsAsFactors = FALSE
+    )
+    
+    # Add details if requested
+    if (include_details && nrow(models_df) > 0) {
+      models_df$parameter_size <- parsed$models$details$parameter_size[valid_models]
+      models_df$format <- parsed$models$details$format[valid_models]
+      models_df$family <- parsed$models$details$family[valid_models]
+      models_df$quantization <- parsed$models$details$quantization_level[valid_models]
+    }
+    
+    return(models_df)
+    
+  }, error = function(e) {
+    # Get the base error message
+    error_msg <- conditionMessage(e)
+    
+    # Print formatted error message
+    cat("\n", header_style("Ollama Models Error"), "\n")
+    cat(header_style("══════════════════"), "\n\n")
+    cat(error_style("Connection Failed"), "\n")
+    
+    # Determine specific error type and provide helpful message
+    if (grepl("Couldn't connect to server", error_msg)) {
+      cat(detail_style("\nPossible causes:"), "\n")
+      cat(detail_style("1. Ollama service is not running"), "\n")
+      cat(detail_style("2. Wrong port number (default: 11434)"), "\n")
+      cat(detail_style("3. Network connectivity issues"), "\n")
+      cat(detail_style("\nTroubleshooting steps:"), "\n")
+      cat(detail_style("1. Check if Ollama is running:"), "\n")
+      cat(detail_style("   - Run 'ollama serve' in terminal or the Ollama app"), "\n")
+      cat(detail_style("2. Verify the API endpoint:"), "\n")
+      cat(detail_style(sprintf("   - Current endpoint: %s", base_url)), "\n")
+      cat(detail_style("3. Run diagnostics:"), "\n")
+      cat(detail_style("   - Use ollama_diagnostics() for detailed status"), "\n")
+    } else if (grepl("Timeout", error_msg)) {
+      cat(detail_style("\nThe request timed out. Try:"), "\n")
+      cat(detail_style("1. Check your internet connection"), "\n")
+      cat(detail_style("2. Verify Ollama is responding"), "\n")
+      cat(detail_style("3. Increase timeout duration if needed"), "\n")
+    } else {
+      cat(detail_style("\nError details:"), "\n")
+      cat(detail_style(error_msg), "\n")
+    }
+    
+    cat("\n") # Add final newline for cleaner output
+    
+    # Return NULL invisibly rather than stopping with error
+    return(invisible(NULL))
+  })
+}
+
+#' Get number of installed Ollama models
+#' @param parsed_content Parsed API response
+#' @return Number of valid models
+#' @keywords internal
+count_valid_models <- function(parsed_content) {
+  if (is.null(parsed_content$models)) return(0)
+  sum(!is.na(parsed_content$models$name))
+}
+
+
+#' Install an Ollama model
+#' @param model_name Name of the model to install
+#' @param base_url Base URL for Ollama API
+#' @param quiet Suppress progress messages
+#' @return TRUE if successful
+#' @export
+ollama_install <- function(model_name, base_url = "http://localhost:11434/api", quiet = FALSE) {
+  tryCatch({
+    if (!quiet) message("Installing model: ", model_name)
+    
+    result <- POST(
+      url = file.path(base_url, "pull"),
+      body = list(name = model_name),
+      encode = "json",
+      config = list(timeout = 3600)
+    )
+    
+    if (result$status_code != 200) {
+      stop("Model installation failed with status: ", result$status_code)
+    }
+    
+    # Monitor download progress
+    response_text <- rawToChar(result$content)
+    responses <- strsplit(response_text, "\n")[[1]]
+    
+    for (resp in responses) {
+      if (nchar(resp) > 0) {
+        parsed <- fromJSON(resp)
+        if (!quiet && !is.null(parsed$status)) {
+          message(parsed$status)
+        }
+      }
+    }
+    
+    if (!quiet) message("Installation complete: ", model_name)
+    return(TRUE)
+    
+  }, error = function(e) {
+    stop("Model installation failed: ", e$message)
+  })
+}
+
+#' Remove an Ollama model
+#' @param model_name Name of the model to remove
+#' @param base_url Base URL for Ollama API
+#' @return TRUE if successful
+#' @export
+ollama_remove <- function(model_name, base_url = "http://localhost:11434/api") {
+  tryCatch({
+    result <- DELETE(
+      url = file.path(base_url, "delete"),
+      body = list(name = model_name),
+      encode = "json",
+      config = list(timeout = 30)
+    )
+    
+    if (result$status_code != 200) {
+      stop("Model removal failed with status: ", result$status_code)
+    }
+    
+    message("Successfully removed model: ", model_name)
+    return(TRUE)
+    
+  }, error = function(e) {
+    stop("Failed to remove model: ", e$message)
+  })
+}
+
+#' Check if an Ollama model is installed
+#' @param model_name Name of the model to check
+#' @param base_url Base URL for Ollama API
+#' @return Logical indicating if model is installed
+#' @export
+ollama_exists <- function(model_name, base_url = "http://localhost:11434/api") {
+  tryCatch({
+    models <- ollama_models(base_url)
+    return(model_name %in% models$name)
+  }, error = function(e) {
+    warning("Could not verify model installation status: ", e$message)
+    return(FALSE)
+  })
+}
+
+
+
+#' Updated diagnostic function for model counting
+#' @param base_url Base URL for Ollama API
+#' @return Diagnostic information
+#' @export
+ollama_diagnostics <- function(base_url = "http://localhost:11434/api", verbose = TRUE) {
+  results <- list()
+  
+  # Load crayon for colors
+  if (!requireNamespace("crayon", quietly = TRUE)) {
+    install.packages("crayon")
+    library(crayon)
+  }
+  
+  # Define color styles
+  header_style <- function(x) crayon::bold(crayon::blue(x))
+  success_style <- function(x) crayon::green(paste("✓", x))
+  error_style <- function(x) crayon::red(paste("✗", x))
+  section_style <- function(x) crayon::cyan(x)
+  detail_style <- function(x) crayon::silver(x)
+  
+  # 1. Check using httr GET request
+  results$httr_check <- tryCatch({
+    response <- httr::GET(file.path(base_url, "tags"))
+    content <- jsonlite::fromJSON(rawToChar(response$content))
+    list(
+      success = response$status_code == 200,
+      status_code = response$status_code,
+      content = content,
+      model_count = count_valid_models(content)  # Use new counting function
+    )
+  }, error = function(e) {
+    list(success = FALSE, error = e$message)
+  })
+  
+  if (verbose) {
+    cat("\n", header_style("Ollama Diagnostic Results"), "\n")
+    cat(header_style("═══════════════════════"), "\n")
+    
+    cat("\n", section_style("API Check:"), "\n")
+    cat("Status: ", if(results$httr_check$success) 
+      success_style("Connected") else error_style("Failed"), "\n")
+    
+    if (results$httr_check$success) {
+      valid_models <- results$httr_check$model_count
+      cat(detail_style(sprintf("Available Models: %d model(s)", valid_models)), "\n")
+      
+      if (valid_models > 0) {
+        models_df <- ollama_models(base_url)
+        cat(detail_style("\nInstalled Models:"), "\n")
+        for (i in 1:nrow(models_df)) {
+          cat(detail_style(sprintf("- %s (%.2f GB)\n", 
+                                   models_df$name[i], 
+                                   models_df$size_gb[i])))
+        }
+      }
+    }
+  }
+  
+  invisible(results)
+}
+
+#' Get Ollama service status
+#' @param quiet Suppress messages
+#' @return Logical indicating if Ollama service is available
+#' @export
+ollama_status <- function(quiet = FALSE) {
+  result <- ollama_diagnostics(verbose = FALSE)
+  is_available <- result$httr_check$success
+  
+  if (!quiet) {
+    if (is_available) {
+      cat(crayon::green("✓ Ollama service is available\n"))
+    } else {
+      cat(crayon::red("✗ Ollama service is unavailable\n"))
+    }
+  }
+  
+  return(is_available)
+}

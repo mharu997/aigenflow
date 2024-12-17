@@ -486,3 +486,125 @@ aigen_AzureMLEndpointModel <- R6Class(
   )
 )
 
+
+
+
+
+
+#' @title OllamaModel Class
+#' @description Implements functionality for local LLMs using Ollama
+#' @private
+########################################
+# Ollama Model Implementation
+########################################
+
+aigen_OllamaModel <- R6Class(
+  "aigen_OllamaModel",
+  inherit = aigen_LanguageModel,
+  
+  public = list(
+    initialize = function(model_name,
+                          base_url = "http://localhost:11434/api",
+                          max_tokens = 1000,
+                          temperature = 0.7) {
+      
+      if (!is.character(model_name) || length(model_name) != 1) {
+        stop("model_name must be a single character string")
+      }
+      
+      private$base_url <- base_url
+      super$initialize(model_name, api_key = NULL, max_tokens, temperature)
+      
+      # Verify service is available
+      if (!ollama_status(quiet = TRUE)) {
+        stop("Cannot connect to Ollama service")
+      }
+      
+      # Verify model exists
+      if (!ollama_exists(model_name, base_url)) {
+        stop(sprintf("Model '%s' not found. Use ollama_install() to install it first.", model_name))
+      }
+    },
+    
+    generate = function(prompt, system_message = NULL) {
+      body <- list(
+        model = private$model_name,
+        prompt = prompt,
+        system = system_message,
+        options = list(
+          temperature = private$temperature,
+          num_predict = private$max_tokens
+        )
+      )
+      
+      response <- tryCatch({
+        result <- POST(
+          url = file.path(private$base_url, "generate"),
+          body = body,
+          encode = "json",
+          config = list(timeout = 300)
+        )
+        
+        if (result$status_code != 200) {
+          stop("API request failed with status: ", result$status_code)
+        }
+        
+        response_text <- rawToChar(result$content)
+        responses <- strsplit(response_text, "\n")[[1]]
+        combined_response <- ""
+        
+        for (resp in responses) {
+          if (nchar(resp) > 0) {
+            parsed <- fromJSON(resp)
+            if (!is.null(parsed$response)) {
+              combined_response <- paste0(combined_response, parsed$response)
+            }
+          }
+        }
+        
+        return(combined_response)
+        
+      }, error = function(e) {
+        stop("Generation failed: ", e$message)
+      })
+      
+      return(response)
+    }
+  ),
+  
+  private = list(
+    base_url = NULL
+  )
+)
+
+#' Create a new Ollama model instance
+#' 
+#' @param model_name Character string for model name (e.g., "llama2", "mistral")
+#' @param base_url Base URL for Ollama API
+#' @param max_tokens Maximum tokens in response
+#' @param temperature Sampling temperature
+#' @return An OllamaModel instance
+#' @export
+OllamaModel <- function(model_name,
+                        base_url = "http://localhost:11434/api",
+                        max_tokens = 1000,
+                        temperature = 0.7) {
+  # Enable debug mode if needed
+  # options(ollama.debug = TRUE)
+  
+  # Input validation
+  if (!is.character(model_name)) stop("model_name must be a character string")
+  if (!is.numeric(temperature) || temperature < 0 || temperature > 1) {
+    stop("temperature must be a number between 0 and 1")
+  }
+  if (!is.numeric(max_tokens) || max_tokens < 1) {
+    stop("max_tokens must be a positive integer")
+  }
+  
+  aigen_OllamaModel$new(
+    model_name = model_name,
+    base_url = base_url,
+    max_tokens = as.integer(max_tokens),
+    temperature = temperature
+  )
+}

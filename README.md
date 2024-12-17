@@ -78,7 +78,7 @@ print(cat(response))
 ```
 
 ## Data Analysis Example
-```r
+` %>% %>% ``r
 # Create model and agent with analysis tools
 model <- OpenAIModel("gpt-4o")
 
@@ -114,13 +114,18 @@ The package supports intuitive pipeline operations using the `%>%` operator, all
 
 - `ask()`: Direct questions to an agent
 - `get_response()`: Extract final response
-- `get_history()`: Get full conversation history
+- `get_history()`: Get full conversation history as a list containing user and agent interactions as separate elements
 
-### Create an agent and ask a question with pipeline operations
+### Create an agent and ask a chain questions with pipeline operations
 ```r
-Unnamed_agent <- OpenAIModel("gpt-4o") %>%
+Unnamed_agent_convo <- OpenAIModel("gpt-4o") %>%
   Agent(short_term_memory = 5) %>% 
-  ask(user_input = "What was Steve Jobs' favourit Apple product?")
+  ask(user_input = "What was Steve Jobs' favorite Apple product?") %>%
+  ask(user_input = "Why do you think he preferred that product over others?") %>% 
+  ask(user_input = "Can you compare it with his least favorite product?")
+
+get_response(Unnamed_agent_convo)
+get_history(Unnamed_agent_convo)
 ```
 
 ### Create a new column using an agent by asking a question
