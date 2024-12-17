@@ -78,7 +78,7 @@ print(cat(response))
 ```
 
 ## Data Analysis Example
-` %>% %>% ``r
+```r
 # Create model and agent with analysis tools
 model <- OpenAIModel("gpt-4o")
 
@@ -144,7 +144,7 @@ new_col <- mtcars %>%
 analyst <- Agent(model, short_term_memory = 5,
                  tools = list(summary = analyze_data))
 writer <- Agent(model, short_term_memory = 20)
-
+```
 
 # Define the workflow with proper template variables
 flow <- CreateFlow(

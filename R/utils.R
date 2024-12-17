@@ -966,17 +966,9 @@ summary.aigen_report <- function(object, ...) {
   cat("\n\nUse print() for full report or access components directly.\n")
 }
 
-
-
-
-
-
-
-
-
-
-
-
+########################################
+# Ollama Model Implementation
+########################################
 
 
 #' Ollama model management utilities
