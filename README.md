@@ -1,9 +1,16 @@
 # *AIGenFlow*: A Cutting-Edge R Framework for Creating, Managing, and Scaling LLM Agents, Teams, and Applications
 
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/4acfac91-9b2d-4222-92c5-f5e4a7a9087b" alt="image">
-</p>
+## Table of Contents
+- [Description](#Description)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Components](#core-components)
+- [Examples](#examples)
+- [Applications](#applications)
+- [Contributing](#contributing)
+- [License](#license)
 
 
 ## Description
@@ -17,16 +24,6 @@
 
 Whether you’re automating workflows, building conversational agents, or unlocking insights through AI-driven solutions, *AIGenFlow* empowers you to innovate and streamline your projects—all within the familiar R environment.
 
-## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Core Components](#core-components)
-- [Examples](#examples)
-- [Applications](#applications)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 - **Simplified API Integration**: Abstract LLM and Agent classes with seamless language model integrations
 - **State Management**: Built-in conversation memory system for Agents
@@ -34,6 +31,7 @@ Whether you’re automating workflows, building conversational agents, or unlock
 - **Workflow Automation**: Chain and Step classes for complex operations
 - **Advanced Analytics**: AI-powered data interpretation and report generation
 - **Conversation Context**: Maintains context across multiple interactions
+
 
 # AIgen: R Package for AI Agent Orchestration
 
