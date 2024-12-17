@@ -147,6 +147,7 @@ writer <- Agent(model, short_term_memory = 20)
 ```
 
 # Define the workflow with proper template variables
+```r
 flow <- CreateFlow(
   agents = list(
     analyst = analyst,
