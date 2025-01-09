@@ -39,7 +39,7 @@ Whether you’re automating workflows, building conversational agents, or unlock
 install.packages("aigenflow")
 
 # Or install development version
-devtools::install_github("mharu997/aigenflow")
+devtools::install_github("https://github.com/mharu997/aigenflow")
 ```
 ## Environment Setup
 ```r
