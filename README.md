@@ -1,9 +1,6 @@
 # *AIGenFlow*: A Cutting-Edge R Framework for Creating, Managing, and Scaling LLM Agents, Teams, and Applications
 
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/4acfac91-9b2d-4222-92c5-f5e4a7a9087b" alt="image">
-</p>
 
 
 ## Description
