@@ -47,7 +47,7 @@ Sys.setenv(OPENAI_API_KEY = "your-openai-key")
 Sys.setenv(ANTHROPIC_API_KEY = "your-anthropic-key")
 Sys.setenv(AZURE_OPENAI_KEY = "your-azure-key")
 ```
-## Basic Usage
+## Quick Start
 ```r
 # Create an OpenAI model instance
 model <- OpenAIModel(
