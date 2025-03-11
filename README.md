@@ -4,10 +4,7 @@
 ## Table of Contents
 - [Description](#Description)
 - [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Core Components](#core-components)
-- [Examples](#examples)
+- [Installation & Quick Start](#installation)
 - [Applications](#applications)
 - [Contributing](#contributing)
 - [License](#license)

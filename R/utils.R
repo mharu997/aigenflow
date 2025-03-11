@@ -272,11 +272,13 @@ MistralEndpoint <- function(endpoint_url,
 #' print(response)
 #' }
 Agent <- function(model,
-                             name = "Assistant",
-                             short_term_memory = 20,
-                             tools = list(),
-                             log_file = NULL,
-                             debug_mode = FALSE) {
+                  name = "Assistant",
+                  short_term_memory = 20, 
+                  tools = list(),
+                  log_file = NULL,
+                  debug_mode = FALSE,
+                  max_react_iterations = 5,
+                  enable_react = TRUE) {
   
   # Input Validation
   if (missing(model)) {
@@ -1221,21 +1223,252 @@ ollama_diagnostics <- function(base_url = "http://localhost:11434/api", verbose 
   invisible(results)
 }
 
-#' Get Ollama service status
-#' @param quiet Suppress messages
-#' @return Logical indicating if Ollama service is available
-#' @export
-ollama_status <- function(quiet = FALSE) {
-  result <- ollama_diagnostics(verbose = FALSE)
-  is_available <- result$httr_check$success
-  
-  if (!quiet) {
-    if (is_available) {
-      cat(crayon::green("✓ Ollama service is available\n"))
-    } else {
+#' Check if Ollama service is available
+#' @param base_url Base URL for Ollama API
+#' @param quiet Suppress status messages
+#' @return Logical indicating if service is available
+#' @keywords internal
+ollama_status <- function(base_url = "http://localhost:11434/api", quiet = FALSE) {
+  tryCatch({
+    result <- httr::GET(
+      url = file.path(base_url, "tags"),
+      httr::config(timeout = 5)
+    )
+    
+    is_available <- result$status_code == 200
+    
+    if (!quiet) {
+      if (is_available) {
+        cat(crayon::green("✓ Ollama service is available\n"))
+      } else {
+        cat(crayon::red("✗ Ollama service is unavailable\n"))
+      }
+    }
+    
+    return(is_available)
+  }, error = function(e) {
+    if (!quiet) {
       cat(crayon::red("✗ Ollama service is unavailable\n"))
+      cat(crayon::silver("Error: ", conditionMessage(e), "\n"))
+    }
+    return(FALSE)
+  })
+}
+
+#' List installed Ollama models
+#' @param base_url Base URL for Ollama API
+#' @return Data frame of installed models
+#' @export
+ollama_models <- function(base_url = "http://localhost:11434/api") {
+  tryCatch({
+    result <- httr::GET(
+      url = file.path(base_url, "tags"),
+      httr::config(timeout = 30)
+    )
+    
+    if (result$status_code != 200) {
+      stop("Failed to get model list with status: ", result$status_code)
+    }
+    
+    parsed <- jsonlite::fromJSON(rawToChar(result$content))
+    
+    if (is.null(parsed$models) || length(parsed$models) == 0) {
+      return(data.frame(
+        name = character(),
+        model = character(),
+        modified = character(),
+        size_gb = numeric(),
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+    # Filter out NA values
+    valid_models <- !is.na(parsed$models$name)
+    data.frame(
+      name = parsed$models$name[valid_models],
+      model = parsed$models$model[valid_models],
+      modified = parsed$models$modified_at[valid_models],
+      size_gb = round(parsed$models$size[valid_models] / (1024^3), 2),
+      stringsAsFactors = FALSE
+    )
+  }, error = function(e) {
+    stop("Failed to list models: ", conditionMessage(e))
+  })
+}
+
+
+
+
+
+#' Check Ollama service availability
+#' @param base_url Base URL for Ollama API
+#' @param quiet Suppress status messages
+#' @return Logical indicating if service is available
+#' @keywords internal
+ollama_status <- function(base_url = "http://localhost:11434/api", quiet = FALSE) {
+  tryCatch({
+    result <- httr::GET(
+      url = file.path(base_url, "tags"),
+      httr::config(timeout = 5)
+    )
+    return(result$status_code == 200)
+  }, error = function(e) {
+    return(FALSE)
+  })
+}
+
+#' Check if Ollama model exists
+#' @param model_name Name of the model
+#' @param base_url Base URL for Ollama API
+#' @return Logical indicating if model exists
+#' @keywords internal
+ollama_exists <- function(model_name, base_url = "http://localhost:11434/api") {
+  tryCatch({
+    result <- httr::GET(
+      url = file.path(base_url, "tags"),
+      httr::config(timeout = 5)
+    )
+    
+    if (result$status_code != 200) return(FALSE)
+    
+    models <- jsonlite::fromJSON(rawToChar(result$content))$models
+    return(!is.null(models) && model_name %in% models$name)
+  }, error = function(e) {
+    return(FALSE)
+  })
+}
+
+#' Monitor active compute device for Ollama inference (Heuristic)
+#' Detect system hardware configuration
+#' @return List containing platform details and available hardware
+#' @keywords internal
+detect_system_hardware <- function() {
+  result <- list(
+    platform = "unknown",
+    hardware = list(
+      accelerator = NULL,
+      gpu = NULL,
+      cpu = TRUE
+    )
+  )
+  
+  os <- Sys.info()['sysname']
+  
+  if (os == "Darwin") {
+    cpu_info <- tryCatch({
+      system("sysctl -n machdep.cpu.brand_string", intern = TRUE)
+    }, error = function(e) "")
+    
+    if (grepl("Apple", cpu_info, ignore.case = TRUE)) {
+      result$platform <- "apple_silicon"
+      result$hardware$accelerator <- "ANE"
+      result$hardware$gpu <- "Apple GPU"
+    }
+  } else if (os == "Linux") {
+    if (system("which nvidia-smi", ignore.stderr = TRUE) == 0) {
+      gpu_info <- try(system("nvidia-smi --query-gpu=gpu_name --format=csv,noheader", intern = TRUE), silent = TRUE)
+      if (!inherits(gpu_info, "try-error")) {
+        result$platform <- "nvidia"
+        result$hardware$gpu <- gpu_info[1]
+      }
+    } else if (file.exists("/dev/dri/renderD128")) {
+      result$platform <- "amd"
+      result$hardware$gpu <- "AMD GPU"
+    }
+  } else if (os == "Windows") {
+    if (system("where nvidia-smi", ignore.stderr = TRUE) == 0) {
+      gpu_info <- try(system("nvidia-smi --query-gpu=gpu_name --format=csv,noheader", intern = TRUE), silent = TRUE)
+      if (!inherits(gpu_info, "try-error")) {
+        result$platform <- "nvidia"
+        result$hardware$gpu <- gpu_info[1]
+      }
     }
   }
   
-  return(is_available)
+  if (result$platform == "unknown") {
+    result$platform <- "cpu_only"
+  }
+  
+  return(result)
+}
+
+#' Monitor active hardware usage during model inference
+#' @param platform Platform type from detect_system_hardware
+#' @return List of active hardware components
+#' @keywords internal
+monitor_inference_hardware <- function(platform) {
+  result <- list(
+    accelerator = FALSE,
+    gpu = FALSE,
+    cpu = FALSE,
+    details = list()
+  )
+  
+  if (platform == "apple_silicon") {
+    ane_processes <- system("ps aux | grep ollama | grep -i Neural | grep -v grep", 
+                            intern = TRUE, ignore.stderr = TRUE)
+    metal_processes <- system("ps aux | grep ollama | grep -i Metal | grep -v grep", 
+                              intern = TRUE, ignore.stderr = TRUE)
+    
+    result$accelerator <- length(ane_processes) > 0
+    result$gpu <- length(metal_processes) > 0
+    result$cpu <- !result$accelerator && !result$gpu
+    
+    if (result$accelerator) result$details$ane <- ane_processes
+    if (result$gpu) result$details$gpu <- metal_processes
+  } 
+  else if (platform == "nvidia") {
+    gpu_processes <- try(system("nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader | grep ollama",
+                                intern = TRUE), silent = TRUE)
+    result$gpu <- !inherits(gpu_processes, "try-error") && length(gpu_processes) > 0
+    result$cpu <- !result$gpu
+    if (result$gpu) result$details$gpu <- gpu_processes
+  }
+  else if (platform == "amd") {
+    gpu_usage <- try(system("rocm-smi --showuse | grep ollama", intern = TRUE), silent = TRUE)
+    result$gpu <- !inherits(gpu_usage, "try-error") && length(gpu_usage) > 0
+    result$cpu <- !result$gpu
+    if (result$gpu) result$details$gpu <- gpu_usage
+  }
+  else {
+    result$cpu <- TRUE
+  }
+  
+  return(result)
+}
+
+#' Format hardware status for display
+#' @param hw_info Hardware info from monitor_inference_hardware
+#' @param system_info System info from detect_system_hardware
+#' @return List containing formatted status strings
+#' @keywords internal
+format_hardware_status <- function(hw_info, system_info) {
+  active <- crayon::green("●")
+  inactive <- crayon::red("○")
+  
+  status <- character(0)
+  
+  if (!is.null(system_info$hardware$accelerator)) {
+    status <- c(status, paste0(
+      if(hw_info$accelerator) active else inactive,
+      " ", system_info$hardware$accelerator
+    ))
+  }
+  
+  if (!is.null(system_info$hardware$gpu)) {
+    status <- c(status, paste0(
+      if(hw_info$gpu) active else inactive,
+      " ", system_info$hardware$gpu
+    ))
+  }
+  
+  status <- c(status, paste0(
+    if(hw_info$cpu) active else inactive,
+    " CPU"
+  ))
+  
+  return(list(
+    status = paste(status, collapse = "  "),
+    platform = crayon::blue(paste0("[", system_info$platform, "]"))
+  ))
 }
