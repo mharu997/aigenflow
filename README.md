@@ -50,7 +50,6 @@ Sys.setenv(AZURE_OPENAI_KEY = "your-azure-key")
 ## Quick Start
 ```r
 # Create an OpenAI model instance
-# Create an OpenAI model instance
 model <- OpenAIModel(
   model_name = "gpt-4o",
   max_tokens = 1000,
@@ -87,6 +86,27 @@ response <- agent$chat(
 
 # Print response
 cat(response)
+
+
+
+get_current_time <- function(tz = "UTC") {
+  format(Sys.time(), tz = tz, usetz = TRUE)
+}
+
+# Create an agent with tools
+timer_agent <- Agent(model, 
+                 short_term_memory = 5,
+                 tools = list(time_tool = get_current_time,
+                              analysis_tool = summary), 
+                 log_file = "agent_logs.txt",
+                 debug_mode = TRUE,
+                 enable_react = TRUE,  # Enable ReAct reasoning
+                 max_react_iterations = 3)
+
+calculate_age <- timer_agent$chat(user_input = "How long has it been since my birthday 1997 April 24?", 
+                              system_prompt = "You are a data analyst.")
+
+cat(calculate_age)
 ```
 
 ## Data Analysis Example
@@ -94,19 +114,13 @@ cat(response)
 # Create model and agent with analysis tools
 model <- OpenAIModel("gpt-4o")
 
-# Define analysis tools
-analysis_tools <- list(
-  analysistool = analyze_data,
-  summarize = function(data) summary(data),
-  correlate = function(data) cor(data)
-)
 
 # Create analysis agent with tools
 analyst <- Agent(
   model = model,
   name = "DataAssistant",
   short_term_memory = 20,
-  tools = analysis_tools,
+  tools = list(summary_tool = summary),
   log_file = "agent_logs.txt",
   debug_mode = TRUE,
   enable_react = TRUE,  # Enable ReAct reasoning
