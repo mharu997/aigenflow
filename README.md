@@ -179,7 +179,7 @@ data_analyst <- OpenAIModel("gpt-4") %>%
   Agent(name = "Analyst", short_term_memory = 15) %>%
   add_tools(get_analysis_tools())  # From utils.R
 
-content_writer <- AnthropicModel("claude-3-opus-20240229") %>%
+content_writer <- OpenAIModel("gpt-4") %>%
   Agent(name = "Writer", short_term_memory = 20)
 ```
 
