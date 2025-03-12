@@ -426,124 +426,68 @@ add_to_memory = function(role, content) {
   return(invisible(self))
 }
 
-# First, let's modify the ask function to handle memory properly
 ask <- function(agent_or_response, user_input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
-  # Check if we're being called from mutate
-  in_mutate <- inherits(user_input, "numeric") || 
-    (inherits(user_input, "character") && length(user_input) > 1)
-  
-  if (in_mutate) {
-    # Original mutate functionality
-    return(vapply(user_input, function(p) {
-      # Extract agent from either type of input
-      agent <- if (inherits(agent_or_response, "ai_response")) {
-        agent_or_response$agent
-      } else {
-        agent_or_response
-      }
-      
-      response <- agent$chat(p, system_prompt, context_window)
-      if (verbose) {
-        cat("\n=== Ask:", agent$get_name(), "===\n")
-        cat("Input:", p, "\n")
-        if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
-        cat("Response:\n", response, "\n")
-        cat("===============================\n")
-      }
-      response
-    }, character(1)))
+  # Extract agent and history
+  if (inherits(agent_or_response, "ai_response")) {
+    agent <- agent_or_response$agent
+    previous_history <- agent_or_response$history
+  } else if (inherits(agent_or_response, "aigen_Agent")) {
+    agent <- agent_or_response
+    previous_history <- list()
   } else {
-    # Extract agent and history based on input type
-    if (inherits(agent_or_response, "ai_response")) {
-      agent <- agent_or_response$agent
-      prev_history <- agent_or_response$history
-      
-      # Update agent's memory directly
-      memory_env <- environment(agent$chat)
-      if (exists("private", envir = memory_env)) {
-        private_env <- get("private", envir = memory_env)
-        if (exists("short_term_memory", envir = private_env)) {
-          memory <- get("short_term_memory", envir = private_env)
-          
-          # Clear memory to prevent duplication
-          memory$clear_memory()
-          
-          # Add deduplicated history entries to memory
-          # Use a hash table to track seen messages
-          seen_messages <- new.env(hash = TRUE)
-          
-          for (entry in prev_history) {
-            # Create a unique key for this message
-            msg_key <- paste(entry$role, digest::digest(entry$content, algo = "md5"), sep = "_")
-            
-            # Only add if we haven't seen it before
-            if (!exists(msg_key, envir = seen_messages)) {
-              memory$add_message(entry$role, entry$content)
-              seen_messages[[msg_key]] <- TRUE
-            }
-          }
-        }
-      }
-    } else if (inherits(agent_or_response, "aigen_Agent")) {
-      agent <- agent_or_response
-      prev_history <- list()
-    } else {
-      stop("First argument must be either an Agent or ai_response object")
-    }
-    
-    # Generate response using the agent with updated memory
-    response <- agent$chat(user_input, system_prompt, context_window)
-    
-    if (verbose) {
-      cat("\n=== Ask:", agent$get_name(), "===\n")
-      cat("Input:", user_input, "\n")
-      if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
-      cat("Response:\n", response, "\n")
-      cat("===============================\n")
-    }
-    
-    # Create updated history (without duplicates)
-    current_history <- list()
-    if (length(prev_history) > 0) {
-      # Remove duplicates from previous history
-      seen_msgs <- new.env(hash = TRUE)
-      deduped_history <- list()
-      
-      for (entry in prev_history) {
-        msg_key <- paste(entry$role, digest::digest(entry$content, algo = "md5"), sep = "_")
-        if (!exists(msg_key, envir = seen_msgs)) {
-          deduped_history <- c(deduped_history, list(entry))
-          seen_msgs[[msg_key]] <- TRUE
-        }
-      }
-      
-      current_history <- deduped_history
-    }
-    
-    # Add current interaction
-    current_history <- c(current_history, list(list(
-      role = "user",
-      content = user_input,
-      timestamp = Sys.time()
-    )))
-    
-    current_history <- c(current_history, list(list(
-      role = "assistant",
-      content = response,
-      timestamp = Sys.time()
-    )))
-    
-    # Check if we're in a mutate context
-    if (identical(topenv(), .GlobalEnv)) {
-      # Return ai_response object with history for interactive use
-      ai_response(agent, response, current_history)
-    } else {
-      # Return just the response for mutate operations
-      response
-    }
+    stop("First argument must be either an Agent or ai_response object")
   }
+  
+  # Format conversation history for inclusion in the prompt
+  history_text <- ""
+  if (length(previous_history) > 0) {
+    # Limit to last 'context_window' exchanges to manage token usage
+    start_idx <- max(1, length(previous_history) - (2 * context_window))
+    recent_history <- previous_history[start_idx:length(previous_history)]
+    
+    history_text <- paste(
+      "Previous conversation (please read carefully and maintain context):\n",
+      paste(sapply(recent_history, function(msg) {
+        sprintf("%s: %s", toupper(msg$role), msg$content)
+      }), collapse = "\n\n"),
+      "\n\n"
+    )
+  }
+  
+  # Create the enhanced prompt with history
+  enhanced_prompt <- paste0(
+    history_text,
+    "Current question: ", user_input
+  )
+  
+  # Generate response using the enhanced prompt
+  response <- agent$chat(enhanced_prompt, system_prompt, context_window)
+  
+  if (verbose) {
+    cat("\n=== Ask:", agent$get_name(), "===\n")
+    cat("Input:", user_input, "\n")
+    if (!is.null(system_prompt)) cat("System:", system_prompt, "\n")
+    cat("Response:\n", response, "\n")
+    cat("===============================\n")
+  }
+  
+  # Update history with this interaction
+  current_history <- c(
+    previous_history,
+    list(list(role = "user", content = user_input, timestamp = Sys.time())),
+    list(list(role = "assistant", content = response, timestamp = Sys.time()))
+  )
+  
+  # Return ai_response object
+  return(structure(
+    list(
+      agent = agent,
+      response = response,
+      history = current_history
+    ),
+    class = "ai_response"
+  ))
 }
-
 
 
 
