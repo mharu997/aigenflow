@@ -2,6 +2,15 @@
 
 
 
+## Table of Contents
+- [Description](#Description)
+- [Features](#features)
+- [Installation & Quick Start](#installation)
+- [Applications](#applications)
+- [Contributing](#contributing)
+- [License](#license)
+
+
 ## Description
 *AIGenFlow* is a user-friendly, comprehensive R-based framework that simplifies integrating OpenAI’s GPT-4 and other Large Language Models (LLMs) into your R environment. Designed with ease of use in mind, it enables you to create intelligent agents and orchestrate workflows with just a few lines of code, making advanced AI capabilities accessible to developers, data scientists, and researchers across diverse fields.
 
@@ -13,16 +22,6 @@
 
 Whether you’re automating workflows, building conversational agents, or unlocking insights through AI-driven solutions, *AIGenFlow* empowers you to innovate and streamline your projects—all within the familiar R environment.
 
-## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Core Components](#core-components)
-- [Examples](#examples)
-- [Applications](#applications)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 - **Simplified API Integration**: Abstract LLM and Agent classes with seamless language model integrations
 - **State Management**: Built-in conversation memory system for Agents
@@ -30,6 +29,7 @@ Whether you’re automating workflows, building conversational agents, or unlock
 - **Workflow Automation**: Chain and Step classes for complex operations
 - **Advanced Analytics**: AI-powered data interpretation and report generation
 - **Conversation Context**: Maintains context across multiple interactions
+
 
 # AIgen: R Package for AI Agent Orchestration
 
@@ -55,11 +55,13 @@ model <- OpenAIModel(
   temperature = 0.7
 )
 
-# Create a basic agent with conversation memory
+# Create a basic agent with memory, logging, and debugging
 agent <- Agent(
   model = model,
   name = "Assistant",
-  memory = AgentConversationStore(max_messages = 10)
+  short_term_memory = 20,
+  log_file = "Assistant_Log.txt",
+  debug_mode = TRUE
 )
 
 # Chat with the agent
@@ -87,100 +89,96 @@ analysis_tools <- list(
 analyst <- Agent(
   model = model,
   name = "DataAnalyst",
-  tools = analysis_tools
+  tools = analysis_tools,
+  short_term_memory = 20,
+  log_file = "Assistant_Log.txt",
+  debug_mode = TRUE
 )
 data("mtcars")
 # Analyze mtcars dataset
 result <- analyst$chat(
   user_input = "Analyze the mtcars dataset. Focus on the relationship between mpg and other variables.",
-  system_prompt = "You are a data analyst. Use the available tools to analyze the data and provide insights."
+  system_prompt = "You are a data analyst."
 )
 ```
-##  Analysis Respones Example
-Based on the analysis of the `mtcars` dataset and focusing on the relationship between miles per gallon (mpg) and other variables, here are some insights:
-  
-  ### Correlation Insights:
-  1. **Negative Correlations:**
-  - **Cylinders (cyl):** There's a strong negative correlation between `mpg` and `cyl` (-0.85). This suggests that cars with more cylinders tend to have lower fuel efficiency.
-   - **Displacement (disp):** `mpg` is also strongly negatively correlated with `disp` (-0.85), indicating that larger engine displacement is associated with lower mpg.
-   - **Horsepower (hp):** A significant negative correlation exists between `mpg` and `hp` (-0.78), showing that higher horsepower is associated with lower fuel efficiency.
-   - **Weight (wt):** The strongest negative correlation is with `wt` (-0.87), suggesting that heavier cars tend to have worse fuel efficiency.
-   - **Carburetors (carb):** There is a moderate negative correlation with `carb` (-0.55), indicating that cars with more carburetors might have lower mpg.
 
-2. **Positive Correlations:**
-   - **Rear Axle Ratio (drat):** There is a moderate positive correlation between `mpg` and `drat` (0.68), indicating that a higher rear axle ratio is somewhat associated with better fuel efficiency.
-   - **Transmission (am):** The correlation with `am` is positive (0.60), suggesting that cars with manual transmission tend to have better mpg.
-   - **Number of Gears (gear):** A moderate positive correlation exists with `gear` (0.48), suggesting that cars with more gears might be more fuel-efficient.
-   - **Engine Shape (vs):** There is a moderate positive correlation with `vs` (0.66), indicating that cars with a straight engine layout might be more fuel-efficient.
+## Pipeline Operations
 
-### Summary:
-- The analysis indicates that `mpg` is most negatively affected by the weight of the car (`wt`), followed by the number of cylinders (`cyl`) and engine displacement (`disp`).
-- On the positive side, having a manual transmission (`am`) and a higher rear axle ratio (`drat`) seem to be associated with better fuel efficiency.
-- Overall, the dataset does not have any missing values, ensuring the integrity of the analysis.
+The package supports intuitive pipeline operations using the `%>%` operator, allowing for seamless chaining of models, agents, and data analysis.
 
-These correlations provide a clear picture of how different features of a car impact its fuel efficiency, which is crucial for designing more efficient vehicles.
+### Key Functions:
 
+- `ask()`: Direct questions to an agent
+- `get_response()`: Extract final response
+- `get_history()`: Get full conversation history as a list containing user and agent interactions as separate elements
 
+### Create an agent and ask a chain questions with pipeline operations
+```r
+Unnamed_agent_convo <- OpenAIModel("gpt-4o") %>%
+  Agent(short_term_memory = 5) %>% 
+  ask(user_input = "What was Steve Jobs' favorite Apple product?") %>%
+  ask(user_input = "Why do you think he preferred that product over others?") %>% 
+  ask(user_input = "Can you compare it with his least favorite product?")
+
+get_response(Unnamed_agent_convo)
+get_history(Unnamed_agent_convo)
+```
+
+### Create a new column using an agent by asking a question
+
+Function is ideal for text summarization and parsing data.  
+Here is an example of how to use the ask() function to create a new column in a dataset by asking a question to an agent.
+
+```r
+new_col <- mtcars %>%
+  mutate(analysis = ask(analyst, paste0("Report the largest value between ", cyl, ", ", mpg, "and, ", hp, 
+  ". Only return a single value without accompaniing words just the number.")))
+```
 
 ## Multi-Agent Workflow Example
 ```r
-# Define agents with different roles
-agents <- list(
-  analyst = list(
-    model = model,
-    tools = list(
-      analyze = analyze_data
-    )
-  ),
-  interpreter = list(
-    model = model
-  ),
-  reporter = list(
-    model = model
-  )
-)
+analyst <- Agent(model, short_term_memory = 5,
+                 tools = list(summary = analyze_data))
+writer <- Agent(model, short_term_memory = 20)
+```
 
-# Create orchestrator
-orchestrator <- OrchestrateFlow(agents = agents)
-
-# Define workflow
-workflow <- DesignFlow(
-  orchestrator = orchestrator,
-  name = "data_analysis_workflow",
-  steps = list(
-    list(
-      name = "analyze",
-      agent = "analyst",
-      prompt = "Analyze this dataset: {{input}}",
-      output_to_input = TRUE
-    ),
-    list(
-      name = "interpret",
-      agent = "interpreter",
-      prompt = "Interpret these statistical results: {{input}}",
-      system_prompt = "You are a data scientist. Explain technical findings in clear terms.",
-      output_to_input = TRUE
-    ),
-    list(
-      name = "report",
-      agent = "reporter",
-      prompt = "Create a business-friendly report from this analysis: {{input}}",
-      system_prompt = "You are a business analyst. Create clear, actionable reports."
+# Define the workflow with proper template variables
+```r
+flow <- CreateFlow(
+  agents = list(
+    analyst = analyst,
+    writer = writer
+  ),
+  workflows = list(
+    report = Workflow(
+      Step(
+        name = "analyze",
+        agent = "analyst",
+        prompt = "Analyze the dataset and provide a detailed summary with specific numbers and statistics.",
+        system = "You are a data analyst. Use available tools to analyze the data and provide specific numeric insights."
+      ),
+      Step(
+        name = "write",
+        agent = "writer",
+        prompt = "Explain these findings in clear language for a general audience. Include specific numbers from the analysis.",
+        system = "You are a technical writer. Reference specific numbers and findings in your explanation."
+      ),
+      Step(
+        name = "email",
+        agent = "writer",
+        prompt = "Draft a concise email for my supervisor including key numeric findings, important trends, and recommended next steps for data analysis.",
+        system = "You are a business analyst writing to a supervisor but keep in mind the scope you are responsible for. Include specific metrics and actionable recommendations."
+      )
     )
   )
 )
 
-# Execute workflow with mtcars dataset
-results <- ExecuteFlow(
-  orchestrator = orchestrator,
-  workflow = "data_analysis_workflow",
-  input = mtcars,
-  context = list(
-    dataset_name = "mtcars",
-    analysis_time = Sys.time()
-  )
-)
-cat(results$analyze, results$interpret, results$report)
+# Example usage
+results <- RunFlow(flow, "report", mtcars)
+
+cat(results$analyze)
+cat(results$write)
+cat(results$email)
 ```
 
 ## Automated Report Generation

@@ -4,7 +4,7 @@ library("jsonlite")
 
 #' @title LanguageModel Class
 #' @description Base class for defining language models.
-#' @export
+#' @private
 ########################################
 # Base Language Model Class
 ########################################
@@ -44,61 +44,106 @@ aigen_LanguageModel <- R6Class(
   )
 )
 
-#' @title OpenAIModel Class
-#' @description Implements functionality specific to OpenAI language models.
-#' @export
+
 ########################################
 # OpenAI Model Implementation
+########################################
+
+#' @title OpenAIModel Class
+#' @description Implements functionality specific to OpenAI language models with support for preview models
+#' @private
+########################################
+# OpenAI Model Implementation (patched)
 ########################################
 
 aigen_OpenAIModel <- R6Class(
   "aigen_OpenAIModel",
   inherit = aigen_LanguageModel,
   public = list(
-    # Constructor with API key handling
     initialize = function(model_name, 
                           api_key = Sys.getenv("OPENAI_API_KEY"), 
                           max_tokens = 1000,
-                          temperature = 0.7) {
+                          temperature = 0.7,
+                          supports_system_messages = TRUE) {
+      
       if (is.null(api_key) || api_key == "") {
         stop("OpenAI API key not provided. Please set it as an environment variable 'OPENAI_API_KEY'.")
       }
+      
+      private$supports_system_messages <- supports_system_messages
+      private$is_preview_model <- grepl("^o1-", model_name)
+      
       super$initialize(model_name, api_key, max_tokens, temperature)
     },
     
     # Generate method specific to OpenAI API
     generate = function(prompt, system_message = "You are a helpful assistant.") {
-      # Purpose: Sends a request to the OpenAI API and generates a response
-      # Parameters:
-      # - prompt: String containing the user's message
-      # - system_message: String containing system instructions
       
-      # Prepare messages array
-      messages <- list(
-        list(role = "system", content = system_message),
-        list(role = "user", content = prompt)
+      # 1. Ensure 'prompt' is a single string
+      if (!is.character(prompt) || length(prompt) == 0) {
+        stop("`prompt` must be a non-empty character vector or string.")
+      } else if (length(prompt) > 1) {
+        # Flatten multiple lines/elements into one string
+        prompt <- paste(prompt, collapse = "\n")
+      }
+      
+      # 2. Ensure 'system_message' is also a single string
+      if (!is.character(system_message) || length(system_message) == 0) {
+        # Fall back to a default system message
+        system_message <- "You are a helpful assistant."
+      } else if (length(system_message) > 1) {
+        # Flatten multiple lines/elements
+        system_message <- paste(system_message, collapse = "\n")
+      }
+      
+      # Prepare messages array based on model capabilities
+      messages <- if (private$supports_system_messages) {
+        list(
+          list(role = "system", content = system_message),
+          list(role = "user", content = prompt)
+        )
+      } else {
+        # For models that don't support system messages, combine with prompt
+        combined_prompt <- sprintf("%s\n\n%s", system_message, prompt)
+        list(list(role = "user", content = combined_prompt))
+      }
+      
+      # Prepare request body
+      body <- list(
+        model = private$model_name,
+        messages = messages
       )
       
+      # Additional parameters
+      if (private$is_preview_model) {
+        body$max_completion_tokens <- private$max_tokens
+        # Preview models only support default temperature
+      } else {
+        body$max_tokens <- private$max_tokens
+        body$temperature <- private$temperature
+      }
+      
+      # Send request
       response <- tryCatch({
-        result <- POST(
+        result <- httr::POST(
           url = "https://api.openai.com/v1/chat/completions",
-          add_headers(
+          httr::add_headers(
             Authorization = paste("Bearer", private$api_key),
             "Content-Type" = "application/json"
           ),
-          body = list(
-            model = private$model_name,
-            messages = messages,
-            temperature = private$temperature,
-            max_tokens = private$max_tokens
-          ),
+          body = body,
           encode = "json"
         )
         
         response_text <- rawToChar(result$content)
-        parsed_response <- fromJSON(response_text, simplifyVector = FALSE)
+        parsed_response <- jsonlite::fromJSON(response_text, simplifyVector = FALSE)
         
         if (!is.null(parsed_response$error)) {
+          # If the model rejects system messages, revert and retry
+          if (grepl("does not support 'system'", parsed_response$error$message)) {
+            private$supports_system_messages <- FALSE
+            return(self$generate(prompt, system_message))
+          }
           stop(paste("API Error:", parsed_response$error$message))
         }
         
@@ -115,13 +160,17 @@ aigen_OpenAIModel <- R6Class(
       
       return(response)
     }
+  ),
+  private = list(
+    supports_system_messages = TRUE,
+    is_preview_model = FALSE
   )
 )
 
 
 #' @title AnthropicModel Class
 #' @description Implements functionality specific to Anthropic Claude models.
-#' @export
+#' @private
 ########################################
 # Anthropic Model Implementation
 ########################################
@@ -192,7 +241,7 @@ aigen_AnthropicModel <- R6Class(
 
 #' @title AzureOpenAIModel Class
 #' @description Implements functionality specific to Azure OpenAI models.
-#' @export
+#' @private
 ########################################
 # Azure OpenAI Model Implementation
 ########################################
@@ -297,7 +346,7 @@ aigen_AzureOpenAIModel <- R6Class(
 #' @title AzureMLEndpointModel Class
 #' @description Base class for Azure ML Endpoint models supporting various model types
 #' @keywords internal
-#' @export
+#' @private
 ########################################
 # Azure ML Endpoint Core Implementation
 ########################################
@@ -450,3 +499,125 @@ aigen_AzureMLEndpointModel <- R6Class(
   )
 )
 
+
+
+
+
+
+#' @title OllamaModel Class
+#' @description Implements functionality for local LLMs using Ollama
+#' @private
+########################################
+# Ollama Model Implementation
+########################################
+
+aigen_OllamaModel <- R6Class(
+  "aigen_OllamaModel",
+  inherit = aigen_LanguageModel,
+  
+  public = list(
+    initialize = function(model_name,
+                          base_url = "http://localhost:11434/api",
+                          max_tokens = 1000,
+                          temperature = 0.7) {
+      
+      if (!is.character(model_name) || length(model_name) != 1) {
+        stop("model_name must be a single character string")
+      }
+      
+      private$base_url <- base_url
+      super$initialize(model_name, api_key = NULL, max_tokens, temperature)
+      
+      # Verify service is available
+      if (!ollama_status(quiet = TRUE)) {
+        stop("Cannot connect to Ollama service")
+      }
+      
+      # Verify model exists
+      if (!ollama_exists(model_name, base_url)) {
+        stop(sprintf("Model '%s' not found. Use ollama_install() to install it first.", model_name))
+      }
+    },
+    
+    generate = function(prompt, system_message = NULL) {
+      body <- list(
+        model = private$model_name,
+        prompt = prompt,
+        system = system_message,
+        options = list(
+          temperature = private$temperature,
+          num_predict = private$max_tokens
+        )
+      )
+      
+      response <- tryCatch({
+        result <- POST(
+          url = file.path(private$base_url, "generate"),
+          body = body,
+          encode = "json",
+          config = list(timeout = 300)
+        )
+        
+        if (result$status_code != 200) {
+          stop("API request failed with status: ", result$status_code)
+        }
+        
+        response_text <- rawToChar(result$content)
+        responses <- strsplit(response_text, "\n")[[1]]
+        combined_response <- ""
+        
+        for (resp in responses) {
+          if (nchar(resp) > 0) {
+            parsed <- fromJSON(resp)
+            if (!is.null(parsed$response)) {
+              combined_response <- paste0(combined_response, parsed$response)
+            }
+          }
+        }
+        
+        return(combined_response)
+        
+      }, error = function(e) {
+        stop("Generation failed: ", e$message)
+      })
+      
+      return(response)
+    }
+  ),
+  
+  private = list(
+    base_url = NULL
+  )
+)
+
+#' Create a new Ollama model instance
+#' 
+#' @param model_name Character string for model name (e.g., "llama2", "mistral")
+#' @param base_url Base URL for Ollama API
+#' @param max_tokens Maximum tokens in response
+#' @param temperature Sampling temperature
+#' @return An OllamaModel instance
+#' @export
+OllamaModel <- function(model_name,
+                        base_url = "http://localhost:11434/api",
+                        max_tokens = 1000,
+                        temperature = 0.7) {
+  # Enable debug mode if needed
+  # options(ollama.debug = TRUE)
+  
+  # Input validation
+  if (!is.character(model_name)) stop("model_name must be a character string")
+  if (!is.numeric(temperature) || temperature < 0 || temperature > 1) {
+    stop("temperature must be a number between 0 and 1")
+  }
+  if (!is.numeric(max_tokens) || max_tokens < 1) {
+    stop("max_tokens must be a positive integer")
+  }
+  
+  aigen_OllamaModel$new(
+    model_name = model_name,
+    base_url = base_url,
+    max_tokens = as.integer(max_tokens),
+    temperature = temperature
+  )
+}
