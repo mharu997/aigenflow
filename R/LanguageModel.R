@@ -52,21 +52,24 @@ aigen_LanguageModel <- R6Class(
 #' @title OpenAIModel Class
 #' @description Implements functionality specific to OpenAI language models with support for preview models
 #' @private
+########################################
+# OpenAI Model Implementation (patched)
+########################################
+
 aigen_OpenAIModel <- R6Class(
   "aigen_OpenAIModel",
   inherit = aigen_LanguageModel,
   public = list(
-    # Constructor with API key handling
     initialize = function(model_name, 
                           api_key = Sys.getenv("OPENAI_API_KEY"), 
                           max_tokens = 1000,
                           temperature = 0.7,
                           supports_system_messages = TRUE) {
+      
       if (is.null(api_key) || api_key == "") {
         stop("OpenAI API key not provided. Please set it as an environment variable 'OPENAI_API_KEY'.")
       }
       
-      # Store additional model capability flags
       private$supports_system_messages <- supports_system_messages
       private$is_preview_model <- grepl("^o1-", model_name)
       
@@ -75,10 +78,23 @@ aigen_OpenAIModel <- R6Class(
     
     # Generate method specific to OpenAI API
     generate = function(prompt, system_message = "You are a helpful assistant.") {
-      # Purpose: Sends a request to the OpenAI API and generates a response
-      # Parameters:
-      # - prompt: String containing the user's message
-      # - system_message: String containing system instructions
+      
+      # 1. Ensure 'prompt' is a single string
+      if (!is.character(prompt) || length(prompt) == 0) {
+        stop("`prompt` must be a non-empty character vector or string.")
+      } else if (length(prompt) > 1) {
+        # Flatten multiple lines/elements into one string
+        prompt <- paste(prompt, collapse = "\n")
+      }
+      
+      # 2. Ensure 'system_message' is also a single string
+      if (!is.character(system_message) || length(system_message) == 0) {
+        # Fall back to a default system message
+        system_message <- "You are a helpful assistant."
+      } else if (length(system_message) > 1) {
+        # Flatten multiple lines/elements
+        system_message <- paste(system_message, collapse = "\n")
+      }
       
       # Prepare messages array based on model capabilities
       messages <- if (private$supports_system_messages) {
@@ -88,21 +104,17 @@ aigen_OpenAIModel <- R6Class(
         )
       } else {
         # For models that don't support system messages, combine with prompt
-        combined_prompt <- if (!is.null(system_message)) {
-          sprintf("%s\n\n%s", system_message, prompt)
-        } else {
-          prompt
-        }
+        combined_prompt <- sprintf("%s\n\n%s", system_message, prompt)
         list(list(role = "user", content = combined_prompt))
       }
       
-      # Prepare request body based on model type
+      # Prepare request body
       body <- list(
         model = private$model_name,
         messages = messages
       )
       
-      # Add parameters based on model type
+      # Additional parameters
       if (private$is_preview_model) {
         body$max_completion_tokens <- private$max_tokens
         # Preview models only support default temperature
@@ -111,10 +123,11 @@ aigen_OpenAIModel <- R6Class(
         body$temperature <- private$temperature
       }
       
+      # Send request
       response <- tryCatch({
-        result <- POST(
+        result <- httr::POST(
           url = "https://api.openai.com/v1/chat/completions",
-          add_headers(
+          httr::add_headers(
             Authorization = paste("Bearer", private$api_key),
             "Content-Type" = "application/json"
           ),
@@ -123,10 +136,10 @@ aigen_OpenAIModel <- R6Class(
         )
         
         response_text <- rawToChar(result$content)
-        parsed_response <- fromJSON(response_text, simplifyVector = FALSE)
+        parsed_response <- jsonlite::fromJSON(response_text, simplifyVector = FALSE)
         
         if (!is.null(parsed_response$error)) {
-          # Check for system message support error
+          # If the model rejects system messages, revert and retry
           if (grepl("does not support 'system'", parsed_response$error$message)) {
             private$supports_system_messages <- FALSE
             return(self$generate(prompt, system_message))

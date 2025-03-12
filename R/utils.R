@@ -309,6 +309,7 @@ Agent <- function(model,
     stop("Parameter 'debug_mode' must be a single logical value (TRUE or FALSE).")
   }
   
+  
   # Initialize the AdvancedAgent
   agent <- aigen_Agent$new(
     model = model,
@@ -316,7 +317,9 @@ Agent <- function(model,
     short_term_memory = short_term_memory,
     tools = tools,
     log_file = log_file,
-    debug_mode = debug_mode
+    debug_mode = debug_mode,
+    max_react_iterations = max_react_iterations,
+    enable_react = enable_react
   )
   
   return(agent)
@@ -392,70 +395,38 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 
 
 
-#' Make ai_response objects pipe-friendly
-#' @private
+# Also update the ai_response pipe operator method
 `%>%.ai_response` <- function(x, f, ...) {
   if (inherits(f, "function") && identical(f, ask)) {
-    # Extract the agent from the ai_response and pass it to ask
-    result <- f(x$agent, ...)
-    
-    # Update history
-    new_history <- c(x$history, list(x$response))
-    
-    # Return new ai_response with updated history
-    structure(
-      list(
-        agent = x$agent,
-        response = result$response,
-        history = new_history
-      ),
-      class = "ai_response"
-    )
+    # Pass the entire ai_response to ask
+    result <- f(x, ...)
+    return(result)
   } else {
     magrittr::freduce(x, list(f))
   }
 }
 
-#' Create an ai_response object
-#' @export
-ai_response <- function(agent, response, history = list()) {
-  # If no history provided, initialize with current response
-  if (length(history) == 0) {
-    history <- list(list(
-      role = "assistant",
-      content = response,
-      timestamp = Sys.time()
-    ))
-  } else {
-    # Append new response to existing history
-    history <- c(history, list(list(
-      role = "assistant",
-      content = response,
-      timestamp = Sys.time()
-    )))
-  }
-  
-  structure(
-    list(
-      agent = agent,
-      response = response,
-      history = history
-    ),
-    class = "ai_response"
-  )
+# Fix 2: Add new methods to the Agent class
+# These would be added to the aigen_Agent R6 Class
+#' @description Get messages from short-term memory
+get_memory_messages = function() {
+  return(private$short_term_memory$get_memory())
 }
 
+#' @description Add a message directly to memory
+add_to_memory = function(role, content) {
+  if (is.null(private$short_term_memory)) {
+    warning("Agent has no short-term memory initialized")
+    return(invisible(self))
+  }
+  
+  private$short_term_memory$add_message(role, content)
+  private$log_event(sprintf("Added message to memory: %s (%d chars)", 
+                            role, nchar(content)))
+  return(invisible(self))
+}
 
-
-#' Ask function for direct questions with string interpolation
-#' @param agent An Agent instance
-#' @param template Question template with variables in curly braces
-#' @param ... Variables to interpolate into template
-#' @param system_prompt Optional system instructions
-#' @param context_window Number of messages to include for context
-#' @param verbose Whether to print detailed output
-#' @export
-# Modify the ask function to support both mutate and conversation history
+# First, let's modify the ask function to handle memory properly
 ask <- function(agent_or_response, user_input, system_prompt = NULL, context_window = 5, verbose = TRUE) {
   # Check if we're being called from mutate
   in_mutate <- inherits(user_input, "numeric") || 
@@ -486,6 +457,33 @@ ask <- function(agent_or_response, user_input, system_prompt = NULL, context_win
     if (inherits(agent_or_response, "ai_response")) {
       agent <- agent_or_response$agent
       prev_history <- agent_or_response$history
+      
+      # Update agent's memory directly
+      memory_env <- environment(agent$chat)
+      if (exists("private", envir = memory_env)) {
+        private_env <- get("private", envir = memory_env)
+        if (exists("short_term_memory", envir = private_env)) {
+          memory <- get("short_term_memory", envir = private_env)
+          
+          # Clear memory to prevent duplication
+          memory$clear_memory()
+          
+          # Add deduplicated history entries to memory
+          # Use a hash table to track seen messages
+          seen_messages <- new.env(hash = TRUE)
+          
+          for (entry in prev_history) {
+            # Create a unique key for this message
+            msg_key <- paste(entry$role, digest::digest(entry$content, algo = "md5"), sep = "_")
+            
+            # Only add if we haven't seen it before
+            if (!exists(msg_key, envir = seen_messages)) {
+              memory$add_message(entry$role, entry$content)
+              seen_messages[[msg_key]] <- TRUE
+            }
+          }
+        }
+      }
     } else if (inherits(agent_or_response, "aigen_Agent")) {
       agent <- agent_or_response
       prev_history <- list()
@@ -493,14 +491,7 @@ ask <- function(agent_or_response, user_input, system_prompt = NULL, context_win
       stop("First argument must be either an Agent or ai_response object")
     }
     
-    # Add user input to history
-    current_history <- c(prev_history, list(list(
-      role = "user",
-      content = user_input,
-      timestamp = Sys.time()
-    )))
-    
-    # Generate response
+    # Generate response using the agent with updated memory
     response <- agent$chat(user_input, system_prompt, context_window)
     
     if (verbose) {
@@ -510,6 +501,37 @@ ask <- function(agent_or_response, user_input, system_prompt = NULL, context_win
       cat("Response:\n", response, "\n")
       cat("===============================\n")
     }
+    
+    # Create updated history (without duplicates)
+    current_history <- list()
+    if (length(prev_history) > 0) {
+      # Remove duplicates from previous history
+      seen_msgs <- new.env(hash = TRUE)
+      deduped_history <- list()
+      
+      for (entry in prev_history) {
+        msg_key <- paste(entry$role, digest::digest(entry$content, algo = "md5"), sep = "_")
+        if (!exists(msg_key, envir = seen_msgs)) {
+          deduped_history <- c(deduped_history, list(entry))
+          seen_msgs[[msg_key]] <- TRUE
+        }
+      }
+      
+      current_history <- deduped_history
+    }
+    
+    # Add current interaction
+    current_history <- c(current_history, list(list(
+      role = "user",
+      content = user_input,
+      timestamp = Sys.time()
+    )))
+    
+    current_history <- c(current_history, list(list(
+      role = "assistant",
+      content = response,
+      timestamp = Sys.time()
+    )))
     
     # Check if we're in a mutate context
     if (identical(topenv(), .GlobalEnv)) {
@@ -521,6 +543,8 @@ ask <- function(agent_or_response, user_input, system_prompt = NULL, context_win
     }
   }
 }
+
+
 
 
 #' Get response history

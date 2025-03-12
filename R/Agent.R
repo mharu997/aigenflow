@@ -38,9 +38,20 @@ aigen_Agent <- R6Class(
       # Initialize short-term memory with size limits
       private$short_term_memory <- LimitedConversationMemory$new(max_messages = short_term_memory)
       
-      # Initialize logging only if log_file is provided
+      # Initialize logging (logger package) if log_file is provided
       if (!is.null(log_file)) {
         file.create(log_file, showWarnings = FALSE)
+        
+        # Route all logger output to the specified file
+        log_appender(appender_file(log_file))
+        
+        # If debug_mode is TRUE, show more verbose logs
+        if (debug_mode) {
+          log_threshold(DEBUG)
+        } else {
+          log_threshold(INFO)
+        }
+        
         private$log_event("Agent initialized")
       }
       
@@ -89,17 +100,13 @@ aigen_Agent <- R6Class(
           response <- private$react_loop(user_input, system_prompt, context_window)
         } else {
           # Otherwise use the standard approach
-          # 1) Attempt to detect direct tool usage in user_input
           direct_tool_results <- private$detect_direct_tool_usage(user_input)
-          
-          # 2) If direct usage isn't found, try generating a plan with the model
           if (is.null(direct_tool_results)) {
             tool_results <- private$process_tool_request(user_input)
           } else {
             tool_results <- direct_tool_results
           }
           
-          # 3) Build context
           context <- private$build_context(
             user_input = user_input,
             system_prompt = system_prompt,
@@ -107,7 +114,6 @@ aigen_Agent <- R6Class(
             tool_results = tool_results
           )
           
-          # 4) Generate final answer
           response <- private$generate_response(context)
         }
         
@@ -138,10 +144,10 @@ aigen_Agent <- R6Class(
         # Validate function has proper documentation
         fn_formals <- formals(fn)
         if (length(fn_formals) > 0) {
-          # Check that parameters have meaningful names (not just "..." or single letters)
+          # Check that parameters have meaningful names
           param_names <- names(fn_formals)
           if (any(nchar(param_names) <= 1) && !all(param_names == "...")) {
-            warning(sprintf("Tool '%s' has parameters with very short names, which may affect usability", name))
+            warning(sprintf("Tool '%s' has parameters with short names, which may affect usability", name))
           }
         }
         
@@ -178,11 +184,8 @@ aigen_Agent <- R6Class(
               "matrix"
             }
             
-            # Add to known data sources with metadata
             data_sources <- c(data_sources, obj_name)
             
-            # Optionally store metadata in a separate structure
-            # This could be extended to include more details about each data source
             if (is.null(private$data_source_metadata)) {
               private$data_source_metadata <- new.env(parent = emptyenv())
             }
@@ -219,29 +222,21 @@ aigen_Agent <- R6Class(
       private$log_event(sprintf("Preparing to execute tool: %s", tool_name))
       
       tryCatch({
-        # Collect all arguments into a list
         args <- list(...)
-        
-        # Enhance arguments with proper type conversion and validation
         enhanced_args <- private$process_parameters(args)
-        
-        # Verify that required parameters are present and have valid types
         valid_args <- private$verify_tool_requirements(tool_name, fn, enhanced_args)
         
-        # Execute the tool with provided arguments
         private$log_event(sprintf("Executing tool '%s' with validated parameters", tool_name))
         result <- do.call(fn, valid_args)
         
-        # Verify the tool output (basic sanity check)
         verified_result <- private$verify_tool_output(tool_name, result)
         
-        # Update tool usage statistics
+        # Update usage stats
         if (exists(tool_name, envir = private$tool_knowledge)) {
           tool_info <- get(tool_name, envir = private$tool_knowledge)
           tool_info$usage_count <- tool_info$usage_count + 1
           tool_info$last_used <- Sys.time()
           assign(tool_name, tool_info, envir = private$tool_knowledge)
-          
           private$log_event(sprintf("Updated usage stats for tool '%s' (count: %d)", 
                                     tool_name, 
                                     tool_info$usage_count))
@@ -311,11 +306,9 @@ aigen_Agent <- R6Class(
       }
       
       if (is.null(private$data_source_metadata)) {
-        # Basic info if metadata not available
         return(as.list(private$available_data_sources))
       }
       
-      # Return detailed metadata
       metadata_list <- lapply(private$available_data_sources, function(name) {
         if (exists(name, envir = private$data_source_metadata)) {
           get(name, envir = private$data_source_metadata)
@@ -344,19 +337,23 @@ aigen_Agent <- R6Class(
     
     #' ---------------------- LOGGING ----------------------
     log_event = function(message, level = "INFO") {
+      # Only log if a file was set in initialize()
       if (!is.null(private$log_file)) {
-        timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-        log_entry <- sprintf("[%s] [%s] %s\n", timestamp, level, message)
-        cat(log_entry, file = private$log_file, append = TRUE)
-        if (private$debug_mode) cat(log_entry)
+        # Translate our 'level' argument to logger methods
+        switch(
+          toupper(level),
+          "ERROR"   = log_error(message),
+          "WARNING" = log_warn(message),
+          "DEBUG"   = log_debug(message),
+          # Default = INFO
+          log_info(message)
+        )
       }
     },
     
     #' ---------------------- REACT LOOP IMPLEMENTATION ----------------------
     
-    #' @description Main ReAct loop - Thinking, Acting, and Observing
     react_loop = function(user_input, system_prompt = NULL, context_window = 5) {
-      # Initialize the ReAct state
       react_state <- list(
         query = user_input,
         thoughts = list(),
@@ -368,65 +365,87 @@ aigen_Agent <- R6Class(
       
       private$log_event("Starting ReAct loop for query")
       
-      # Main ReAct loop
       while (react_state$iteration < private$max_react_iterations && is.null(react_state$final_answer)) {
-        # Update iteration counter
         react_state$iteration <- react_state$iteration + 1
         private$log_event(sprintf("ReAct iteration %d/%d", 
                                   react_state$iteration, 
                                   private$max_react_iterations))
         
-        # THINK: Reason about what to do next
+        # THINK
         react_state <- private$react_think(react_state, system_prompt)
-        
-        # Check if we have a final answer already
         if (!is.null(react_state$final_answer)) {
           private$log_event("ReAct loop completed with final answer")
           break
         }
         
-        # ACT: Execute the chosen action (usually a tool)
+        # ACT
         if (!is.null(react_state$next_action)) {
           react_state <- private$react_act(react_state)
-          
-          # OBSERVE: Record the results
+          # OBSERVE
           react_state <- private$react_observe(react_state)
         } else {
-          # No action was specified, prompt for a final answer
+          # No action specified; finalize
           react_state <- private$react_finalize(react_state, system_prompt)
         }
       }
       
-      # If we've reached max iterations without a final answer, generate one
       if (is.null(react_state$final_answer)) {
         private$log_event("ReAct reached maximum iterations, generating final answer")
         react_state <- private$react_finalize(react_state, system_prompt)
       }
       
-      # Return the final answer
       return(react_state$final_answer)
     },
     
-    #' @description Think step of the ReAct loop - reason about next steps
     react_think = function(state, system_prompt = NULL) {
-      # Construct the thinking prompt
-      base_prompt <- "You are a reasoning agent that helps solve problems by thinking step-by-step."
+      base_prompt <- "You are a chain-of-thought reasoning agent with access to various tools. Think step by step."
+      
+      # Strongly encourage using tools if relevant
+      usage_instructions <- paste(
+        "TOOL USAGE GUIDELINES - FOLLOW THESE INSTRUCTIONS PRECISELY:\n\n",
+        "1. ALWAYS use tools for ANY calculations, data operations, or information retrieval:\n",
+        "   - Mathematical calculations (arithmetic, statistics, date/time math, etc.)\n",
+        "   - Data analysis or transformation operations\n",
+        "   - Current time/date information\n",
+        "   - Lookups into datasets or external information\n",
+        "   - ANY operations where precision is required\n\n",
+        
+        "2. EVALUATION PROCESS - For EVERY user request:\n",
+        "   a) First, identify if the request involves ANY calculation, data processing, or retrieval\n",
+        "   b) Check if ANY available tool can handle ANY part of this task\n",
+        "   c) If a tool exists that can help, you MUST use it\n",
+        "   d) NEVER attempt calculations yourself when a tool exists\n\n",
+        
+        "3. ABSOLUTE REQUIREMENTS:\n",
+        "   - For date/time calculations: ALWAYS use date or time tools\n",
+        "   - For numerical operations: ALWAYS use calculation tools\n",
+        "   - For data analysis: ALWAYS use analysis tools\n",
+        "   - For database queries: ALWAYS use query tools\n",
+        "   - Even for seemingly simple calculations, ALWAYS use appropriate tools\n\n",
+        
+        "4. WHEN NO TOOLS ARE APPLICABLE:\n",
+        "   - Only after confirming NO tools apply, provide knowledge-based responses\n",
+        "   - If uncertain whether a tool applies, err on the side of using the tool\n",
+        "   - For general information, reasoning, or explanation, you may respond directly\n\n",
+        
+        "5. ACCURACY PRIORITY:\n",
+        "   - Tool usage ALWAYS takes precedence over convenience\n",
+        "   - Your primary responsibility is providing accurate results\n",
+        "   - Using tools properly is MORE IMPORTANT than a quick response\n"
+      )
+      
       if (!is.null(system_prompt)) {
-        system_msg <- paste(base_prompt, system_prompt, sep = "\n\n")
+        system_msg <- paste(base_prompt, usage_instructions, system_prompt, sep = "\n\n")
       } else {
-        system_msg <- base_prompt
+        system_msg <- paste(base_prompt, usage_instructions, sep = "\n\n")
       }
       
       # Build context from the current state
       context <- sprintf("User Query: %s\n\n", state$query)
       
-      # Add previous thoughts, actions, and observations
       if (length(state$thoughts) > 0) {
         for (i in seq_along(state$thoughts)) {
-          # Add the thought
           context <- paste0(context, sprintf("Thought %d: %s\n\n", i, state$thoughts[[i]]))
-          
-          # Add the action if available
           if (i <= length(state$actions) && !is.null(state$actions[[i]])) {
             action_str <- if (is.list(state$actions[[i]])) {
               sprintf("Action %d: Use tool '%s' with parameters: %s", 
@@ -441,8 +460,6 @@ aigen_Agent <- R6Class(
             }
             context <- paste0(context, sprintf("%s\n\n", action_str))
           }
-          
-          # Add the observation if available
           if (i <= length(state$observations) && !is.null(state$observations[[i]])) {
             context <- paste0(context, sprintf("Observation %d: %s\n\n", 
                                                i, 
@@ -451,29 +468,24 @@ aigen_Agent <- R6Class(
         }
       }
       
-      # Add available tools information
       tools_info <- private$format_tool_descriptions()
       context <- paste0(context, "Available Tools:\n", tools_info, "\n\n")
       
-      # Add available data sources
       data_sources <- paste(private$available_data_sources, collapse = ", ")
-      context <- paste0(context, "Available Data Sources: ", 
+      context <- paste0(context, "Available Data Sources: ",
                         ifelse(length(private$available_data_sources) > 0, 
                                data_sources, 
                                "None"), 
                         "\n\n")
       
-      # Add instructions for the next step
       next_step_prompt <- paste0(
         context,
-        "Based on the above, provide your next thought and action. ",
-        "You can:\n",
-        "1. Use a tool by specifying 'ACTION: Use tool <tool_name> with parameters <param1=value1, param2=value2, ...>'\n",
-        "2. Provide a final answer with 'FINAL ANSWER: <your detailed answer>'\n\n",
+        "Decide your next step:\n",
+        "1. Use a tool: ACTION: Use tool <tool_name> with parameters <param1=value1, ...>\n",
+        "2. Provide final answer: FINAL ANSWER: <answer>\n\n",
         "Next Thought:"
       )
       
-      # Generate the next thought
       thought_response <- private$model$generate(
         prompt = next_step_prompt,
         system_message = system_msg
@@ -481,10 +493,8 @@ aigen_Agent <- R6Class(
       
       private$log_event("Generated next thought in ReAct loop")
       
-      # Parse the thought to extract action or final answer
       parsed_response <- private$parse_react_response(thought_response)
       
-      # Update the state with the new thought and next action
       state$thoughts[[length(state$thoughts) + 1]] <- parsed_response$thought
       state$next_action <- parsed_response$action
       state$final_answer <- parsed_response$final_answer
@@ -492,7 +502,6 @@ aigen_Agent <- R6Class(
       return(state)
     },
     
-    #' @description Act step of the ReAct loop - execute the chosen action
     react_act = function(state) {
       if (is.null(state$next_action)) {
         private$log_event("No action specified in ReAct act step", "WARNING")
@@ -503,57 +512,41 @@ aigen_Agent <- R6Class(
       private$log_event(sprintf("ReAct executing action: %s", 
                                 if(is.list(action)) action$tool else "custom"))
       
-      # Execute the action (typically a tool)
       result <- tryCatch({
         if (is.list(action) && !is.null(action$tool)) {
-          # It's a tool execution
           if (action$tool %in% names(private$tools)) {
             tool_fn <- private$tools[[action$tool]]
             params <- private$process_parameters(action$parameters)
-            
-            # Verify parameters
-            validated_params <- private$verify_tool_requirements(
-              action$tool, tool_fn, params
-            )
-            
-            # Execute the tool
+            validated_params <- private$verify_tool_requirements(action$tool, tool_fn, params)
             res <- do.call(tool_fn, validated_params)
-            
-            # Verify output
             private$verify_tool_output(action$tool, res)
           } else {
             sprintf("Error: Tool '%s' not found", action$tool)
           }
         } else {
-          # It's a custom action (text)
+          # It's a custom textual action
           action
         }
       }, error = function(e) {
-        # Record the error as the result
         sprintf("Error executing action: %s", e$message)
       })
       
-      # Store the action and its result
       state$actions[[length(state$actions) + 1]] <- state$next_action
       state$action_result <- result
       
       return(state)
     },
     
-    #' @description Observe step of the ReAct loop - record the results of actions
     react_observe = function(state) {
       if (is.null(state$action_result)) {
         private$log_event("No action result to observe in ReAct observe step", "WARNING")
         return(state)
       }
       
-      # Format the observation
       observation <- tryCatch({
         if (is.list(state$action_result) || is.data.frame(state$action_result)) {
-          # For complex results, format as string representation
           paste(capture.output(print(state$action_result)), collapse = "\n")
         } else {
-          # For simple results, use as is
           as.character(state$action_result)
         }
       }, error = function(e) {
@@ -562,19 +555,14 @@ aigen_Agent <- R6Class(
       
       private$log_event("Recorded observation in ReAct loop")
       
-      # Store the observation
       state$observations[[length(state$observations) + 1]] <- observation
-      
-      # Clear the action result and next action for the next iteration
       state$action_result <- NULL
       state$next_action <- NULL
       
       return(state)
     },
     
-    #' @description Generate the final answer when the ReAct loop concludes
     react_finalize = function(state, system_prompt = NULL) {
-      # Create a system message
       base_prompt <- sprintf("You are %s. Provide a comprehensive final answer.", private$name)
       if (!is.null(system_prompt)) {
         system_msg <- paste(base_prompt, system_prompt, sep = "\n\n")
@@ -582,17 +570,11 @@ aigen_Agent <- R6Class(
         system_msg <- base_prompt
       }
       
-      # Compile all thoughts, actions, and observations
       context <- sprintf("User Query: %s\n\n", state$query)
-      
       if (length(state$thoughts) > 0) {
         context <- paste0(context, "Reasoning Process:\n\n")
-        
         for (i in seq_along(state$thoughts)) {
-          # Add the thought
           context <- paste0(context, sprintf("Thought %d: %s\n", i, state$thoughts[[i]]))
-          
-          # Add the action if available
           if (i <= length(state$actions) && !is.null(state$actions[[i]])) {
             action_str <- if (is.list(state$actions[[i]])) {
               sprintf("Action %d: Used tool '%s' with parameters: %s", 
@@ -607,25 +589,20 @@ aigen_Agent <- R6Class(
             }
             context <- paste0(context, sprintf("%s\n", action_str))
           }
-          
-          # Add the observation if available
           if (i <= length(state$observations) && !is.null(state$observations[[i]])) {
             context <- paste0(context, sprintf("Observation %d: %s\n", 
                                                i, 
                                                state$observations[[i]]))
           }
-          
           context <- paste0(context, "\n")
         }
       }
       
-      # Request a final answer
       final_prompt <- paste0(
         context,
-        "Based on the above reasoning process and observations, please provide a comprehensive final answer to the user's query."
+        "Based on the above reasoning process, please provide a final, user-facing answer."
       )
       
-      # Generate the final answer
       answer <- private$model$generate(
         prompt = final_prompt,
         system_message = system_msg
@@ -633,25 +610,21 @@ aigen_Agent <- R6Class(
       
       private$log_event("Generated final answer from ReAct reasoning")
       
-      # Update the state
       state$final_answer <- answer
-      
       return(state)
     },
     
-    #' @description Parse the response from the thinking step to extract actions or final answers
+    #' ---------------------- RESPONSE PARSING ----------------------
     parse_react_response = function(response) {
-      # Initialize result structure
       result <- list(
         thought = response,
         action = NULL,
         final_answer = NULL
       )
       
-      # Split response by lines
       lines <- strsplit(response, "\n")[[1]]
+      lines <- trimws(lines)
       
-      # Extract the thought part (everything before ACTION or FINAL ANSWER)
       thought_lines <- c()
       action_line <- NULL
       final_answer_lines <- c()
@@ -674,25 +647,18 @@ aigen_Agent <- R6Class(
         }
       }
       
-      # Set the thought
       result$thought <- paste(thought_lines, collapse = "\n")
       
-      # Parse action if present
       if (!is.null(action_line)) {
-        # Extract "Use tool X with parameters Y, Z"
         action_text <- gsub("^ACTION\\s*:\\s*", "", action_line)
-        
-        # Check if it's a tool usage
         if (grepl("^[Uu]se\\s+tool\\s+([A-Za-z0-9_]+)", action_text)) {
-          # Extract the tool name
           tool_pattern <- "^[Uu]se\\s+tool\\s+([A-Za-z0-9_]+)"
           tool_name <- regmatches(action_text, regexec(tool_pattern, action_text))[[1]][2]
           
-          # Extract parameters if present
-          params <- list()
           param_pattern <- "(?:with|using)\\s+parameters?\\s+(.*?)$"
           param_matches <- regmatches(action_text, regexec(param_pattern, action_text, perl = TRUE))
           
+          params <- list()
           if (length(param_matches[[1]]) > 1) {
             param_str <- param_matches[[1]][2]
             params <- private$parse_parameter_string(param_str)
@@ -703,12 +669,10 @@ aigen_Agent <- R6Class(
             parameters = params
           )
         } else {
-          # Custom action
           result$action <- action_text
         }
       }
       
-      # Set final answer if present
       if (length(final_answer_lines) > 0) {
         result$final_answer <- paste(final_answer_lines, collapse = "\n")
       }
@@ -717,80 +681,59 @@ aigen_Agent <- R6Class(
     },
     
     #' ---------------------- TOOL USAGE DETECTION ----------------------
-    
-    #' @description Attempts to detect explicit instructions in user input
     detect_direct_tool_usage = function(user_input) {
       tool_names <- names(private$tools)
-      
-      # Build a pattern capturing something like: "use <toolname> with paramA=valA paramB=valB..."
       usage_regex <- "(?i)(?:use|run)\\s+([A-Za-z0-9_]+)\\s+(?:with\\s+)?(.*)"
       
       match <- regexpr(usage_regex, user_input, perl = TRUE)
       if (match[1] == -1) {
-        return(NULL)  # not found
+        return(NULL)
       }
       
-      # Extract the matches
       matches <- regmatches(user_input, match)
       if (length(matches) == 0) return(NULL)
       
-      # Extract tool name and parameters
       tool_line <- regmatches(user_input, match, invert = FALSE)[[1]]
       capture_groups <- regexpr(usage_regex, tool_line, perl = TRUE)
       group_values <- regmatches(tool_line, capture_groups)
-      
       if (length(group_values) < 3) {
-        # Could be "use <tool>" but no param mention
         possible_tool <- group_values[2]
         if (possible_tool %in% tool_names) {
-          # Return with empty param block
           return(private$execute_found_tool(possible_tool, list()))
         } else {
           return(NULL)
         }
       }
       
-      # Now we have a recognized tool name & parameter chunk
       found_tool_name <- group_values[2]
       param_string <- group_values[3]
       
-      # Check that the tool is recognized
       if (!found_tool_name %in% tool_names) {
         private$log_event(sprintf("User mentioned unrecognized tool '%s'", found_tool_name), "INFO")
         return(NULL)
       }
       
-      # Parse the param string
       param_list <- private$parse_parameter_string(param_string)
-      
-      # Attempt execution
       return(private$execute_found_tool(found_tool_name, param_list))
     },
     
-    #' @description Process tool request based on LLM planning
     process_tool_request = function(user_input) {
       if (length(private$tools) == 0) return(NULL)
       
       plan <- private$generate_tool_plan(user_input)
-      if (is.null(plan)) {
-        return(NULL)
-      }
+      if (is.null(plan)) return(NULL)
       
-      # Attempt to execute the plan
       result <- tryCatch({
         if (!plan$tool %in% names(private$tools)) {
           stop(sprintf("Planned tool '%s' not found", plan$tool))
         }
         
         tool_fn <- private$tools[[plan$tool]]
-        # Process and validate parameters
         params <- private$process_parameters(plan$parameters)
         validated_params <- private$verify_tool_requirements(plan$tool, tool_fn, params)
         
         private$log_event(sprintf("Executing tool '%s' via model plan", plan$tool))
         output <- do.call(tool_fn, validated_params)
-        
-        # Verify output
         verified_output <- private$verify_tool_output(plan$tool, output)
         
         list(
@@ -807,24 +750,18 @@ aigen_Agent <- R6Class(
       return(result)
     },
     
-    #' @description Creates or returns the final tool usage result
     execute_found_tool = function(tool_name, param_list) {
-      # Validate the function
       tool_fn <- private$tools[[tool_name]]
       if (is.null(tool_fn)) {
         return(NULL)
       }
       
-      # Process and validate parameters
       params <- private$process_parameters(param_list)
       validated_params <- private$verify_tool_requirements(tool_name, tool_fn, params)
       
-      # Execute
       out <- tryCatch({
         private$log_event(sprintf("Executing tool '%s' from direct user instruction", tool_name))
         res <- do.call(tool_fn, validated_params)
-        
-        # Verify output
         verified_res <- private$verify_tool_output(tool_name, res)
         
         list(
@@ -842,18 +779,14 @@ aigen_Agent <- R6Class(
     },
     
     #' ---------------------- TOOL PLANNING ----------------------
-    
-    #' @description Use LLM to generate a tool execution plan
     generate_tool_plan = function(user_input) {
       if (length(private$tools) == 0) return(NULL)
       
-      # Create a detailed planning prompt
+      # Strongly encourage the model to pick a tool if it can
       planning_prompt <- sprintf(
-        "User Input: %s\n\n",
-        user_input
+        "User Input: %s\n\n", user_input
       )
       
-      # Add tool descriptions with examples
       planning_prompt <- paste0(
         planning_prompt,
         "Available Tools:\n",
@@ -861,12 +794,10 @@ aigen_Agent <- R6Class(
         "\n\n"
       )
       
-      # Add data source information with more details
       data_sources_info <- if (length(private$available_data_sources) > 0) {
         ds_descriptions <- sapply(private$available_data_sources, function(ds_name) {
           if (!is.null(private$data_source_metadata) && 
               exists(ds_name, envir = private$data_source_metadata)) {
-            
             metadata <- get(ds_name, envir = private$data_source_metadata)
             sprintf("- %s: %s with dimensions %s", 
                     ds_name, 
@@ -885,42 +816,33 @@ aigen_Agent <- R6Class(
         planning_prompt,
         "Available Data Sources:\n",
         data_sources_info,
-        "\n\n"
-      )
-      
-      # Request format guidance
-      planning_prompt <- paste0(
-        planning_prompt,
-        "Analyze the user input and determine if a tool should be used.\n",
-        "If tool usage is needed, respond in this format:\n",
+        "\n\n",
+        "Analyze the user input to see if ANY tool is relevant. If yes, respond with:\n",
         "Tool: <tool_name>\n",
         "Parameters:\n",
         "- <param_name>: <value>\n",
-        "- <param_name>: <value>\n\n",
-        "If no tool usage is needed, respond with just 'None'."
+        "Otherwise, respond with 'None'.\n\n",
+        "IMPORTANT: For any request involving calculations, data retrieval, or queries, ALWAYS use the appropriate tool if available. Do not attempt to perform these tasks manually unless explicitly instructed otherwise.\n"
       )
       
-      # Generate the plan
       plan_response <- private$model$generate(
         prompt = planning_prompt,
-        system_message = sprintf(
-          "You are %s, a technical assistant that helps decide when and how to use tools. Analyze requests carefully and determine if tool usage would be helpful. If yes, specify exactly which tool and parameters to use.", 
-          private$name
+        system_message = paste(
+          sprintf("You are %s, a technical assistant. Always prefer to use a relevant tool if it can address the request.", private$name),
+          "You must respond with 'None' ONLY if no available tool can help. If a tool can handle any part of the request, plan to use it.",
+          sep = "\n\n"
         )
       )
       
-      # Parse the plan
       return(private$parse_tool_plan(plan_response))
     },
     
-    #' @description Parse the LLM's tool plan output
     parse_tool_plan = function(plan_response) {
       if (is.null(plan_response) || nchar(trimws(plan_response)) == 0) {
         private$log_event("Received empty plan response", "WARNING")
         return(NULL)
       }
       
-      # If LLM says "None", assume no tool usage
       if (tolower(trimws(plan_response)) == "none") {
         return(NULL)
       }
@@ -928,7 +850,6 @@ aigen_Agent <- R6Class(
       lines <- strsplit(plan_response, "\n")[[1]]
       lines <- trimws(lines[nchar(trimws(lines)) > 0])
       
-      # Parse for "Tool: <toolName>"
       tool_pattern <- "^Tool:\\s*(\\w+)$"
       tool_line_idx <- grep(tool_pattern, lines, perl = TRUE)
       if (length(tool_line_idx) == 0) {
@@ -938,25 +859,21 @@ aigen_Agent <- R6Class(
       
       tool_line <- lines[tool_line_idx[1]]
       tool_name <- gsub(tool_pattern, "\\1", tool_line, perl = TRUE)
-      
       if (!tool_name %in% names(private$tools)) {
         private$log_event(sprintf("Specified tool '%s' not in registry", tool_name), "WARNING")
         return(NULL)
       }
       
-      # Parse for "Parameters:" section
       param_section_idx <- grep("^Parameters:", lines, ignore.case = TRUE)
       if (length(param_section_idx) == 0) {
         private$log_event("No parameter section found in plan", "INFO")
         return(list(tool = tool_name, parameters = list()))
       }
       
-      # Everything below "Parameters:" are param lines
       param_lines <- lines[(param_section_idx[1] + 1):length(lines)]
       
       parameters <- list()
       for (pl in param_lines) {
-        # Example format: "- paramA: valueA"
         param_pattern <- "^[-*]\\s*([A-Za-z0-9_]+)\\s*:\\s*(.+)$"
         if (grepl(param_pattern, pl, perl = TRUE)) {
           matches <- regmatches(pl, regexec(param_pattern, pl, perl = TRUE))[[1]]
@@ -971,20 +888,19 @@ aigen_Agent <- R6Class(
       private$log_event(sprintf("Parsed plan => Tool: '%s' with %d parameters", 
                                 tool_name, 
                                 length(parameters)))
+      
       return(list(tool = tool_name, parameters = parameters))
     },
     
-    #' @description Parse parameter string for direct tool usage
+    #' ---------------------- PARAMETER PROCESSING ----------------------
     parse_parameter_string = function(param_string) {
       if (!nzchar(trimws(param_string))) return(list())
       
-      # Split by commas or spaces
       raw_parts <- unlist(strsplit(param_string, "[,;]|(?<=\\w)\\s+(?=\\w)", perl = TRUE))
       raw_parts <- trimws(raw_parts[nchar(trimws(raw_parts)) > 0])
       
       params <- list()
       for (part in raw_parts) {
-        # param=val or param:val
         kv_pattern <- "^([A-Za-z0-9_]+)\\s*[:=]\\s*(.+)$"
         if (grepl(kv_pattern, part, perl = TRUE)) {
           matches <- regmatches(part, regexec(kv_pattern, part, perl = TRUE))[[1]]
@@ -994,7 +910,6 @@ aigen_Agent <- R6Class(
             params[[p_name]] <- p_val
           }
         }
-        # Handle bare words as boolean TRUE flags
         else if (grepl("^[A-Za-z0-9_]+$", part)) {
           params[[part]] <- TRUE
         }
@@ -1003,9 +918,6 @@ aigen_Agent <- R6Class(
       params
     },
     
-    #' ---------------------- PARAMETER RESOLUTION ----------------------
-    
-    #' @description Enhanced parameter processing with better type inference and data source resolution
     process_parameters = function(params) {
       processed <- list()
       
@@ -1013,99 +925,73 @@ aigen_Agent <- R6Class(
         value <- params[[name]]
         
         if (is.character(value)) {
-          # Check if direct value needs conversion
+          # Attempt to resolve data sources
           if (value %in% private$available_data_sources) {
-            # Attempt to get the referenced data
             ds <- tryCatch({
               get(value, envir = .GlobalEnv)
             }, error = function(e) NULL)
-            
-            # If it's a valid data.frame or matrix, use it
             if (is.data.frame(ds) || is.matrix(ds)) {
               value <- ds
               private$log_event(sprintf("Resolved data source '%s' in param '%s'", value, name))
             }
-          } 
-          # Check for vectors using c(...) syntax
+          }
+          # Attempt to parse c(...)
           else if (grepl("^c\\(.*\\)$", trimws(value))) {
-            # Try to parse as an R vector expression
             tryCatch({
               vector_expr <- paste0("list(", sub("^c\\((.*)\\)$", "\\1", value), ")")
               vector_result <- eval(parse(text = vector_expr), envir = new.env())
               value <- unlist(vector_result)
-              private$log_event(sprintf("Converted string '%s' to vector of length %d", 
-                                        substr(value, 1, 15), 
-                                        length(value)))
             }, error = function(e) {
-              # Keep as string if parsing fails
               private$log_event(sprintf("Failed to parse '%s' as vector: %s", 
-                                        value, 
-                                        e$message), 
-                                "WARNING")
+                                        value, e$message), "WARNING")
             })
           }
-          # Check for list using list(...) syntax
+          # Attempt to parse list(...)
           else if (grepl("^list\\(.*\\)$", trimws(value))) {
-            # Try to parse as an R list expression
             tryCatch({
               list_result <- eval(parse(text = value), envir = new.env())
               if (is.list(list_result)) {
                 value <- list_result
-                private$log_event(sprintf("Converted string '%s' to list with %d elements", 
-                                          substr(value, 1, 15), 
-                                          length(value)))
               }
             }, error = function(e) {
-              # Keep as string if parsing fails
               private$log_event(sprintf("Failed to parse '%s' as list: %s", 
-                                        value, 
-                                        e$message), 
-                                "WARNING")
+                                        value, e$message), "WARNING")
             })
           }
-          # Handle data.frame(...) syntax
+          # Attempt to parse data.frame(...)
           else if (grepl("^data\\.frame\\(.*\\)$", trimws(value))) {
-            # Try to parse as a data.frame expression
             tryCatch({
               df_result <- eval(parse(text = value), envir = new.env())
               if (is.data.frame(df_result)) {
                 value <- df_result
-                private$log_event(sprintf("Converted string to data.frame with %d rows, %d cols", 
-                                          nrow(df_result), 
-                                          ncol(df_result)))
               }
             }, error = function(e) {
-              # Keep as string if parsing fails
               private$log_event(sprintf("Failed to parse as data.frame: %s", e$message), "WARNING")
             })
           }
-          # More advanced type inference
+          # Booleans
           else if (identical(tolower(value), "true") || identical(tolower(value), "false")) {
-            # Boolean values
             value <- tolower(value) == "true"
           }
+          # Integers
           else if (grepl("^\\d+$", value)) {
-            # Integer values
             value <- as.integer(value)
           }
+          # Floats
           else if (grepl("^-?\\d+\\.\\d+$", value)) {
-            # Floating point values
             value <- as.numeric(value)
           }
+          # Dates
           else if (grepl("^\\d{4}-\\d{2}-\\d{2}$", value)) {
-            # Date values
             tryCatch({
               value <- as.Date(value)
-            }, error = function(e) {
-              # Keep as string if parsing fails
-            })
+            }, error = function(e) {})
           }
+          # NULL or NA
           else if (grepl("^NULL$", trimws(value))) {
-            # NULL value
             value <- NULL
           }
           else if (grepl("^NA$", trimws(value))) {
-            # NA value
             value <- NA
           }
         }
@@ -1116,17 +1002,11 @@ aigen_Agent <- R6Class(
       processed
     },
     
-    #' ---------------------- TOOL VERIFICATION ----------------------
-    
-    #' @description Verify that all required parameters are present and valid
     verify_tool_requirements = function(tool_name, fn, provided_params) {
       fn_formals <- formals(fn)
       param_names <- names(fn_formals)
-      
-      # Identify required parameters (those without defaults)
       required_params <- param_names[sapply(fn_formals, is.symbol)]
       
-      # Check if any required parameters are missing
       missing_required <- setdiff(required_params, names(provided_params))
       if (length(missing_required) > 0 && !"..." %in% param_names) {
         stop(sprintf("Required parameters missing for tool '%s': %s", 
@@ -1134,10 +1014,8 @@ aigen_Agent <- R6Class(
                      paste(missing_required, collapse = ", ")))
       }
       
-      # Prepare the final parameter list
       final_params <- list()
       
-      # Include provided parameters that match the function signature
       for (param in names(provided_params)) {
         if (param %in% param_names || "..." %in% param_names) {
           final_params[[param]] <- provided_params[[param]]
@@ -1149,14 +1027,12 @@ aigen_Agent <- R6Class(
         }
       }
       
-      # Add default values for parameters not provided by the user
       for (param in param_names) {
         if (!param %in% names(final_params) && !is.symbol(fn_formals[[param]])) {
           final_params[[param]] <- eval(fn_formals[[param]], envir = .GlobalEnv)
         }
       }
       
-      # Log the parameter verification
       private$log_event(sprintf("Verified parameters for tool '%s': %s", 
                                 tool_name, 
                                 paste(names(final_params), collapse = ", ")))
@@ -1164,95 +1040,55 @@ aigen_Agent <- R6Class(
       return(final_params)
     },
     
-    #' @description Verify the output of a tool execution
     verify_tool_output = function(tool_name, output) {
-      # This could be extended with more sophisticated validation
-      # For now, just check that output is not NULL or error
       if (is.null(output)) {
         warning(sprintf("Tool '%s' returned NULL output", tool_name))
       }
-      
       if (inherits(output, "try-error")) {
         stop(sprintf("Tool '%s' returned an error: %s", tool_name, attr(output, "condition")$message))
       }
-      
-      # If output is a list, check if it has an 'error' element indicating a problem
       if (is.list(output) && !is.null(output$error)) {
         warning(sprintf("Tool '%s' returned an error message: %s", tool_name, output$error))
       }
       
-      # Log successful verification
       private$log_event(sprintf("Verified output from tool '%s'", tool_name))
-      
       return(output)
     },
     
     #' ---------------------- TOOL DISCOVERY ----------------------
-    
-    #' @description Analyze a tool and generate documentation
     analyze_tool = function(tool_name) {
       fn <- private$tools[[tool_name]]
       params <- names(formals(fn))
       
-      # Get parameter details including defaults - with robust error handling
       param_details <- tryCatch({
         lapply(params, function(p) {
-          tryCatch({
-            # Safely extract the formal parameter
-            formal <- formals(fn)[[p]]
-            
-            # Safely determine if it has a default value
-            has_default <- !is.symbol(formal)
-            
-            # Safely get default value if it exists
-            default <- if (has_default) {
-              tryCatch({
-                eval(formal, envir = .GlobalEnv)
-              }, error = function(e) {
-                # If we can't evaluate the default, just deparse it
-                paste0("<default: ", deparse(formal), ">")
-              })
-            } else {
-              "<required>"
-            }
-            
-            # Return the parameter details
-            list(
-              name = p,
-              default = default,
-              required = !has_default && p != "..."
-            )
-          }, error = function(e) {
-            # Fallback if anything goes wrong for this parameter
-            private$log_event(
-              sprintf("Error analyzing parameter '%s' for tool '%s': %s", p, tool_name, e$message),
-              "WARNING"
-            )
-            list(
-              name = p,
-              default = "<unknown>",
-              required = FALSE
-            )
-          })
+          formal <- formals(fn)[[p]]
+          has_default <- !is.symbol(formal)
+          default <- if (has_default) {
+            tryCatch({
+              eval(formal, envir = .GlobalEnv)
+            }, error = function(e) {
+              paste0("<default: ", deparse(formal), ">")
+            })
+          } else {
+            "<required>"
+          }
+          list(
+            name = p,
+            default = default,
+            required = !has_default && p != "..."
+          )
         })
       }, error = function(e) {
-        # If the entire parameter analysis fails, create a basic list
         private$log_event(
           sprintf("Error analyzing parameters for tool '%s': %s", tool_name, e$message),
           "WARNING"
         )
-        
-        # Create a simplified parameter list as fallback
         lapply(params, function(p) {
-          list(
-            name = p,
-            default = "<unknown>",
-            required = p != "..."
-          )
+          list(name = p, default = "<unknown>", required = p != "...")
         })
       })
       
-      # Format param info for documentation - with safe handling
       param_doc <- sapply(param_details, function(p) {
         if (isTRUE(p$required)) {
           sprintf("%s (required)", p$name)
@@ -1260,45 +1096,35 @@ aigen_Agent <- R6Class(
           "... (additional arguments)"
         } else {
           default_text <- if (is.character(p$default)) {
-            # Ensure proper quoting for character defaults
             paste0('"', gsub('"', '\\"', p$default), '"')
           } else {
-            # Safe conversion to string for any other type
             tryCatch(as.character(p$default), error = function(e) "<complex>")
           }
           sprintf("%s (default: %s)", p$name, default_text)
         }
       })
       
-      # Generate documentation prompt
       doc_prompt <- sprintf(
-        "Function name: %s\nParameters: %s\n\nYour task is to write a concise yet comprehensive description of this function's purpose and usage. Include what it does, when to use it, and brief explanations of each parameter. Be specific and technical but user-friendly.",
+        "Function name: %s\nParameters: %s\n\nWrite a concise yet thorough description of this function. Explain usage, each parameter, and best practices.",
         tool_name,
         paste(param_doc, collapse = ", ")
       )
       
-      # Generate description using LLM
       description <- private$model$generate(
         prompt = doc_prompt,
-        system_message = "You are a technical documentation expert specializing in R function documentation."
+        system_message = "You are an R documentation expert. Provide a helpful but succinct description."
       )
-      
-      # Clean up whitespace in description
       description <- trimws(gsub("\\s+", " ", description))
       
-      # Generate example usage
       example_prompt <- sprintf(
-        "Create a concise, realistic example of using the function '%s' with parameters: %s.\nProvide the example in the format of a function call with appropriate parameter values. Be specific and practical.",
-        tool_name,
-        paste(param_doc, collapse = ", ")
+        "Create a concise example calling '%s' with realistic parameters.\nUse an R code snippet.",
+        tool_name
       )
-      
       example <- private$model$generate(
         prompt = example_prompt,
-        system_message = "You are an R programming expert. Create a helpful, realistic example."
+        system_message = "You are an R programming expert. Provide a single code example."
       )
       
-      # Store tool knowledge
       assign(tool_name, list(
         description = description,
         parameters = params,
@@ -1311,23 +1137,19 @@ aigen_Agent <- R6Class(
       private$log_event(sprintf("Generated documentation for tool '%s'", tool_name))
     },
     
-    #' @description Format tool descriptions for planning
     format_tool_descriptions = function() {
       descriptions <- sapply(names(private$tools), function(name) {
         if (exists(name, envir = private$tool_knowledge)) {
           knowledge <- get(name, envir = private$tool_knowledge)
-          
-          # Format parameter list
           param_desc <- sapply(knowledge$param_details, function(p) {
             if (p$required) {
               sprintf("%s (required)", p$name)
             } else if (p$name == "...") {
-              "... (optional additional args)"
+              "... (optional args)"
             } else {
               sprintf("%s (optional)", p$name)
             }
           })
-          
           sprintf("- %s: %s\n  Parameters: %s",
                   name,
                   knowledge$description,
@@ -1343,30 +1165,24 @@ aigen_Agent <- R6Class(
       paste(descriptions, collapse = "\n\n")
     },
     
-    #' @description Format tool descriptions with examples for enhanced planning
     format_tool_descriptions_with_examples = function() {
       descriptions <- sapply(names(private$tools), function(name) {
         if (exists(name, envir = private$tool_knowledge)) {
           knowledge <- get(name, envir = private$tool_knowledge)
-          
-          # Format parameter list
           param_desc <- sapply(knowledge$param_details, function(p) {
             if (p$required) {
               sprintf("%s (required)", p$name)
             } else if (p$name == "...") {
-              "... (optional additional args)"
+              "... (optional)"
             } else {
               sprintf("%s (optional)", p$name)
             }
           })
-          
-          # Include example if available
           example_text <- if (!is.null(knowledge$example)) {
-            sprintf("\n  Example: %s", knowledge$example)
+            sprintf("\n  Example:\n  %s", knowledge$example)
           } else {
             ""
           }
-          
           sprintf("- %s: %s\n  Parameters: %s%s",
                   name,
                   knowledge$description,
@@ -1384,14 +1200,11 @@ aigen_Agent <- R6Class(
     },
     
     #' ---------------------- CONTEXT BUILDING ----------------------
-    
-    #' @description Build context for response generation
     build_context = function(user_input, system_prompt = NULL, context_window = 5, tool_results = NULL) {
       history <- private$short_term_memory$get_recent_messages(context_window)
       
       context_parts <- c()
       
-      # Add system prompt if provided
       if (!is.null(system_prompt)) {
         context_parts <- c(
           context_parts,
@@ -1401,15 +1214,27 @@ aigen_Agent <- R6Class(
         context_parts <- c(context_parts, sprintf("You are %s.", private$name))
       }
       
-      # Add conversation history
       if (length(history) > 0) {
-        convo <- sapply(history, function(msg) {
-          sprintf("%s: %s", toupper(msg$role), msg$content)
-        })
-        context_parts <- c(context_parts, convo)
+        context_parts <- c(context_parts, "Previous conversation context:")
+        convo <- c()
+        for (i in seq_along(history)) {
+          msg <- history[[i]]
+          formatted_msg <- sprintf("%s: %s", toupper(msg$role), msg$content)
+          convo <- c(convo, formatted_msg)
+        }
+        context_parts <- c(
+          context_parts, 
+          "===== CONVERSATION HISTORY START =====",
+          paste(convo, collapse = "\n\n"),
+          "===== CONVERSATION HISTORY END ====="
+        )
       }
       
-      # Add tool results if available
+      context_parts <- c(
+        context_parts,
+        "Continue the conversation with full context awareness."
+      )
+      
       if (!is.null(tool_results)) {
         context_parts <- c(
           context_parts,
@@ -1417,18 +1242,25 @@ aigen_Agent <- R6Class(
         )
       }
       
-      # Return the context
       list(
         system_message = if (!is.null(system_prompt)) {
-          paste(sprintf("You are %s.", private$name), system_prompt, sep = "\n\n")
+          paste(
+            sprintf("You are %s.", private$name),
+            "Maintain conversation context across turns.",
+            system_prompt, 
+            sep = "\n\n"
+          )
         } else {
-          sprintf("You are %s.", private$name)
+          paste(
+            sprintf("You are %s.", private$name),
+            "Maintain conversation context across turns.",
+            sep = "\n\n"
+          )
         },
         prompt = paste(context_parts, collapse = "\n\n")
       )
     },
     
-    #' @description Generate response using the language model
     generate_response = function(context) {
       response <- private$model$generate(
         prompt = context$prompt,
