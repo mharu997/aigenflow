@@ -50,18 +50,33 @@ Sys.setenv(AZURE_OPENAI_KEY = "your-azure-key")
 ## Quick Start
 ```r
 # Create an OpenAI model instance
+# Create an OpenAI model instance
 model <- OpenAIModel(
   model_name = "gpt-4o",
-  temperature = 0.7
+  max_tokens = 1000,
+  temperature = 0
 )
 
 # Create a basic agent with memory, logging, and debugging
 agent <- Agent(
   model = model,
-  name = "Assistant",
+  name = "DataAssistant",
   short_term_memory = 20,
-  log_file = "Assistant_Log.txt",
-  debug_mode = TRUE
+  tools = list(
+    analyze = analyze_data,  # From utils.R
+    summarize = summary
+  ),
+  log_file = "agent_logs.txt",
+  debug_mode = TRUE,
+  enable_react = TRUE,  # Enable ReAct reasoning
+  max_react_iterations = 3
+)
+
+# Add additional tools after creation
+add_tools(agent, 
+  tools = list(
+    correlate = cor
+  )
 )
 
 # Chat with the agent
@@ -70,7 +85,8 @@ response <- agent$chat(
   system_prompt = "You are a data science educator. Explain concepts clearly and concisely."
 )
 
-print(cat(response))
+# Print response
+cat(response)
 ```
 
 ## Data Analysis Example
@@ -88,11 +104,13 @@ analysis_tools <- list(
 # Create analysis agent with tools
 analyst <- Agent(
   model = model,
-  name = "DataAnalyst",
-  tools = analysis_tools,
+  name = "DataAssistant",
   short_term_memory = 20,
-  log_file = "Assistant_Log.txt",
-  debug_mode = TRUE
+  tools = analysis_tools,
+  log_file = "agent_logs.txt",
+  debug_mode = TRUE,
+  enable_react = TRUE,  # Enable ReAct reasoning
+  max_react_iterations = 3
 )
 data("mtcars")
 # Analyze mtcars dataset
@@ -114,14 +132,20 @@ The package supports intuitive pipeline operations using the `%>%` operator, all
 
 ### Create an agent and ask a chain questions with pipeline operations
 ```r
-Unnamed_agent_convo <- OpenAIModel("gpt-4o") %>%
-  Agent(short_term_memory = 5) %>% 
-  ask(user_input = "What was Steve Jobs' favorite Apple product?") %>%
-  ask(user_input = "Why do you think he preferred that product over others?") %>% 
-  ask(user_input = "Can you compare it with his least favorite product?")
+# Create a conversational agent using pipe syntax
+results <- OpenAIModel("gpt-4") %>%
+  Agent(name = "ResearchAssistant", enable_react = TRUE, short_term_memory = 10) %>% 
+  ask(user_input = "What was Marie Curie's most significant contribution to science?") %>%
+  ask(user_input = "Why was this work so revolutionary for that time period?") %>% 
+  ask(user_input = "How did this influence modern scientific research methods?")
 
-get_response(Unnamed_agent_convo)
-get_history(Unnamed_agent_convo)
+# Get the final response
+final_answer <- results$response
+get_response(results)
+# Get the entire conversation history
+conversation <- get_history(results)
+
+
 ```
 
 ### Create a new column using an agent by asking a question
@@ -137,48 +161,50 @@ new_col <- mtcars %>%
 
 ## Multi-Agent Workflow Example
 ```r
-analyst <- Agent(model, short_term_memory = 5,
-                 tools = list(summary = analyze_data))
-writer <- Agent(model, short_term_memory = 20)
+data_analyst <- OpenAIModel("gpt-4") %>%
+  Agent(name = "Analyst", short_term_memory = 15) %>%
+  add_tools(get_analysis_tools())  # From utils.R
+
+content_writer <- AnthropicModel("claude-3-opus-20240229") %>%
+  Agent(name = "Writer", short_term_memory = 20)
 ```
 
 # Define the workflow with proper template variables
 ```r
+# Create an orchestrated workflow
 flow <- CreateFlow(
   agents = list(
-    analyst = analyst,
-    writer = writer
+    "analyst" = data_analyst,
+    "writer" = content_writer
   ),
   workflows = list(
-    report = Workflow(
+    "data_report" = Workflow(
       Step(
-        name = "analyze",
+        name = "analysis",
         agent = "analyst",
-        prompt = "Analyze the dataset and provide a detailed summary with specific numbers and statistics.",
-        system = "You are a data analyst. Use available tools to analyze the data and provide specific numeric insights."
+        prompt = "Analyze this data thoroughly: {{context.dataset}}",
+        pass_to_next = TRUE
       ),
       Step(
-        name = "write",
+        name = "report",
         agent = "writer",
-        prompt = "Explain these findings in clear language for a general audience. Include specific numbers from the analysis.",
-        system = "You are a technical writer. Reference specific numbers and findings in your explanation."
-      ),
-      Step(
-        name = "email",
-        agent = "writer",
-        prompt = "Draft a concise email for my supervisor including key numeric findings, important trends, and recommended next steps for data analysis.",
-        system = "You are a business analyst writing to a supervisor but keep in mind the scope you are responsible for. Include specific metrics and actionable recommendations."
+        prompt = "Create a professional report based on this analysis: {{analysis}}",
+        system = "You are a professional business writer. Create clear, concise reports."
       )
     )
   )
 )
 
-# Example usage
-results <- RunFlow(flow, "report", mtcars)
+# Run the workflow
+report <- RunFlow(
+  orchestrator = flow,
+  workflow = "data_report",
+  input = "Please analyze our quarterly sales data",
+  context = list(
+    dataset = sales_data  # Your data frame
+  )
+)
 
-cat(results$analyze)
-cat(results$write)
-cat(results$email)
 ```
 
 ## Automated Report Generation
@@ -224,6 +250,59 @@ azure_endpoint <- AzureMLEndpoint(
   model_type = "chat"
 )
 ```
+
+### Using Local LLMs with Ollama
+```r
+# Check available Ollama models (IMPORTANT: Requires Ollama installed that you could download from https://ollama.com)
+available_models <- ollama_models(include_details = TRUE)
+print(available_models)
+
+# Install a new Ollama model
+ollama_install("llama2", quiet = FALSE)
+
+# Run diagnostics to verify Ollama is working correctly
+diagnostics <- ollama_diagnostics(verbose = TRUE)
+
+# Create an Ollama model instance
+local_model <- OllamaModel(
+  model_name = "llama2",
+  max_tokens = 1000,
+  temperature = 0.7
+)
+
+# Create an agent using the local Ollama model
+local_agent <- Agent(
+  model = local_model,
+  name = "LocalAssistant",
+  short_term_memory = 10,
+  tools = list(
+    summarize = summary,
+    analyze = analyze_data
+  ),
+  enable_react = TRUE
+)
+
+# Chat with the local agent
+response <- local_agent$chat(
+  user_input = "Explain the advantages of using local LLMs versus cloud-based ones.",
+  system_prompt = "You are a helpful AI assistant running locally on the user's machine."
+)
+
+# Print the response
+cat(response)
+
+# Create a chain of questions with the local model
+conversation <- local_model %>%
+  Agent(name = "LocalChat") %>%
+  ask("What are the main features of the Llama model architecture?") %>%
+  ask("How does it compare to other open-source models?") %>%
+  ask("What are some good use cases for this type of model?")
+
+# Remove a model when you're done with it
+ollama_remove("llama2")
+
+```
+
 
 ### Adding Tools to Existing Agents
 ```r
