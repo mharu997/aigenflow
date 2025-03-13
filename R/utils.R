@@ -271,6 +271,7 @@ MistralEndpoint <- function(endpoint_url,
 #' response <- agent$chat("Analyze my dataset for trends.")
 #' print(response)
 #' }
+#' @export
 Agent <- function(model,
                   name = "Assistant",
                   short_term_memory = 20, 
