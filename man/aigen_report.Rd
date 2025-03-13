@@ -2,18 +2,18 @@
 % Please edit documentation in R/utils.R
 \name{aigen_report}
 \alias{aigen_report}
-\title{Generate a comprehensive data analysis report}
+\title{Generate a comprehensive, research-grade data analysis report}
 \usage{
 aigen_report(
   model,
   data,
   data_question = "What are the key insights from this data?",
-  system_prompt =
-    "You are a data analyst. Interpret these statistics and provide key insights."
+  system_prompt = NULL,
+  output_format = "markdown"
 )
 }
 \arguments{
-\item{model}{An instance of aigen_LanguageModel}
+\item{model}{An instance of LanguageModel}
 
 \item{data}{A data frame or matrix to analyze}
 
@@ -25,26 +25,15 @@ aigen_report(
 }
 \value{
 A list containing:
-\item{raw_analysis}{Technical statistical analysis}
-\item{interpretation}{Expert interpretation of findings}
-\item{final_report}{User-friendly report}
+\item{raw_analysis}{Detailed statistical analysis with comprehensive metrics}
+\item{interpretation}{Expert interpretation with statistical significance}
+\item{final_report}{Clear, structured report with key findings}
 \item{metadata}{Analysis metadata including timestamps and parameters}
 }
 \description{
-Creates a detailed, multi-layered report from data analysis, including technical
-statistics, expert interpretation, and a user-friendly summary. The function uses
-multiple specialized AI agents to analyze, interpret, and communicate findings.
-}
-\examples{
-\dontrun{
-model <- OpenAIModel("gpt-4")
-results <- summarize_and_report(
-  model = model,
-  data = iris,
-  data_question = "What distinguishes different iris species?",
-  system_prompt = "You are a botanist and data scientist."
-)
-cat(results$final_report)
-}
-
+Creates a detailed, publication-quality report from data analysis, incorporating
+rigorous statistical analysis, expert interpretation, and clear communication.
+The function employs specialized AI agents to conduct thorough analysis,
+interpret findings, and present results with academic rigor while maintaining
+accessibility.
 }

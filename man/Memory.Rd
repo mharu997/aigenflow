@@ -4,7 +4,7 @@
 \alias{Memory}
 \title{Memory Class}
 \description{
-Memory class for storing and managing memory data.
+Base class for storing and managing memory data.
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -13,6 +13,7 @@ Memory class for storing and managing memory data.
 \item \href{#method-Memory-add_entry}{\code{Memory$add_entry()}}
 \item \href{#method-Memory-get_memory}{\code{Memory$get_memory()}}
 \item \href{#method-Memory-clear_memory}{\code{Memory$clear_memory()}}
+\item \href{#method-Memory-count}{\code{Memory$count()}}
 \item \href{#method-Memory-clone}{\code{Memory$clone()}}
 }
 }
@@ -49,6 +50,15 @@ Memory class for storing and managing memory data.
 \subsection{Method \code{clear_memory()}}{
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{Memory$clear_memory()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-Memory-count"></a>}}
+\if{latex}{\out{\hypertarget{method-Memory-count}{}}}
+\subsection{Method \code{count()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{Memory$count()}\if{html}{\out{</div>}}
 }
 
 }

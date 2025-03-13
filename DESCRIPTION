@@ -23,6 +23,9 @@ Imports:
     jsonlite,
     rmarkdown,
     knitr,
+    future, 
+    logger, 
+    magrittr,
     tools
 Suggests:
     testthat (>= 3.0.0)

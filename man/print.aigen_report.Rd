@@ -2,10 +2,10 @@
 % Please edit documentation in R/utils.R
 \name{print.aigen_report}
 \alias{print.aigen_report}
-\title{Print method for aigen_report objects}
+\title{Print method for aigen_report objects with enhanced formatting}
 \usage{
 \method{print}{aigen_report}(x, ...)
 }
 \description{
-Print method for aigen_report objects
+Print method for aigen_report objects with enhanced formatting
 }

@@ -2,46 +2,71 @@
 % Please edit documentation in R/utils.R
 \name{Agent}
 \alias{Agent}
-\title{Create a new Agent instance with optional tools}
+\title{Initialize an Advanced Conversational Agent}
 \usage{
 Agent(
   model,
-  name = NULL,
-  memory = NULL,
-  tools = NULL,
-  tools_env = parent.frame(),
-  validate_tools = TRUE
+  name = "Assistant",
+  short_term_memory = 20,
+  tools = list(),
+  log_file = NULL,
+  debug_mode = FALSE,
+  max_react_iterations = 5,
+  enable_react = TRUE
 )
 }
 \arguments{
-\item{model}{An instance of a language model (OpenAI, Anthropic, etc.)}
+\item{model}{An instance of \code{aigen_LanguageModel}. This is the language model the agent will use.}
 
-\item{memory}{Optional ConversationMemory instance for managing chat history}
+\item{name}{A character string representing the agent's name. Default is "Assistant".}
 
-\item{tools}{Named list of functions to use as tools}
+\item{short_term_memory}{An integer specifying the maximum number of messages to retain in short-term memory. Default is 20.}
 
-\item{tools_env}{Environment to look for tool functions, defaults to parent frame}
+\item{tools}{A named list of functions representing tools the agent can utilize. Default is an empty list.}
 
-\item{validate_tools}{Logical indicating whether to validate tool functions}
+\item{log_file}{A character string specifying the path to the log file. If NULL, logging is disabled. Default is NULL.}
+
+\item{debug_mode}{A logical value indicating whether to enable debug mode. If TRUE, logs are printed to the console. Default is FALSE.}
 }
 \value{
-An Agent instance
+An instance of \code{AdvancedAgent}.
 }
 \description{
-Create a new Agent instance with optional tools
+Initialize an Advanced Conversational Agent
 }
 \examples{
-# Simple initialization with a model
-model <- OpenAIModel("gpt-4")
-agent <- Agent_new(model)
+\dontrun{
+# Assuming LimitedConversationMemory and aigen_LanguageModel are defined elsewhere
 
-# Initialize with tools
-sum_two <- function(a, b) a + b
-analyze_data <- function(data, col) summary(data[[col]])
-agent <- Agent_new(
-  model = model,
-  tools = c("sum" = "sum_two", 
-            "analyze" = "analyze_data")
+# Initialize a language model (placeholder)
+language_model <- OpenAIModel("gpt-4o")
+
+# Define some tools
+summarize_tool <- function(text) {
+  summary <- summary(text)
+  return(summary)
+}
+
+stats_tool <- function(data) {
+  stats <- summary(data)
+  return(stats)
+}
+
+# Initialize the agent using the wrapper
+agent <- Agent(
+  model = language_model,
+  name = "DataAssistant",
+  short_term_memory = 30,
+  tools = list(
+    summarize = summarize_tool,
+    stats = stats_tool
+  ),
+  log_file = "agent.txt",
+  debug_mode = TRUE
 )
 
+# Interact with the agent
+response <- agent$chat("Analyze my dataset for trends.")
+print(response)
+}
 }

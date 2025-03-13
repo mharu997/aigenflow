@@ -4,7 +4,7 @@
 \alias{aigen_OpenAIModel}
 \title{OpenAIModel Class}
 \description{
-Implements functionality specific to OpenAI language models.
+Implements functionality specific to OpenAI language models with support for preview models
 }
 \section{Super class}{
 \code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_OpenAIModel}
@@ -26,7 +26,8 @@ Implements functionality specific to OpenAI language models.
   model_name,
   api_key = Sys.getenv("OPENAI_API_KEY"),
   max_tokens = 1000,
-  temperature = 0.7
+  temperature = 0.7,
+  supports_system_messages = TRUE
 )}\if{html}{\out{</div>}}
 }
 

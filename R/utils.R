@@ -731,29 +731,6 @@ analyze_data <- function(data) {
   return(paste(result, collapse = "\n"))
 }
 
-
-
-#' @title Create analysis tools for agent
-#' @description Creates a list of analysis tools that can be passed to an agent
-#' @return Named list of analysis functions
-#' @export
-get_analysis_tools <- function() {
-  list(
-    analyze = analyze_data,
-    summarize = function(data) summary(data),
-    correlate = function(data) {
-      if (is.data.frame(data)) {
-        numeric_cols <- sapply(data, is.numeric)
-        if (any(numeric_cols)) {
-          return(cor(data[, numeric_cols, drop = FALSE]))
-        }
-      }
-      stop("Data must be a data frame with numeric columns")
-    }
-  )
-}
-
-
 #' Generate a comprehensive, research-grade data analysis report
 #' 
 #' @description 

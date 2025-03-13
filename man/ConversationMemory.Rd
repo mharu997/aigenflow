@@ -14,6 +14,7 @@ Memory class for store and manage conversation history.
 \itemize{
 \item \href{#method-ConversationMemory-add_message}{\code{ConversationMemory$add_message()}}
 \item \href{#method-ConversationMemory-get_recent_messages}{\code{ConversationMemory$get_recent_messages()}}
+\item \href{#method-ConversationMemory-get_messages_by_role}{\code{ConversationMemory$get_messages_by_role()}}
 \item \href{#method-ConversationMemory-clone}{\code{ConversationMemory$clone()}}
 }
 }
@@ -22,6 +23,7 @@ Memory class for store and manage conversation history.
 <ul>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="add_entry"><a href='../../aigenflow/html/Memory.html#method-Memory-add_entry'><code>aigenflow::Memory$add_entry()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="clear_memory"><a href='../../aigenflow/html/Memory.html#method-Memory-clear_memory'><code>aigenflow::Memory$clear_memory()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="count"><a href='../../aigenflow/html/Memory.html#method-Memory-count'><code>aigenflow::Memory$count()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="get_memory"><a href='../../aigenflow/html/Memory.html#method-Memory-get_memory'><code>aigenflow::Memory$get_memory()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="initialize"><a href='../../aigenflow/html/Memory.html#method-Memory-initialize'><code>aigenflow::Memory$initialize()</code></a></span></li>
 </ul>
@@ -42,6 +44,15 @@ Memory class for store and manage conversation history.
 \subsection{Method \code{get_recent_messages()}}{
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ConversationMemory$get_recent_messages(n = 5)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-ConversationMemory-get_messages_by_role"></a>}}
+\if{latex}{\out{\hypertarget{method-ConversationMemory-get_messages_by_role}{}}}
+\subsection{Method \code{get_messages_by_role()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{ConversationMemory$get_messages_by_role(role, n = Inf)}\if{html}{\out{</div>}}
 }
 
 }

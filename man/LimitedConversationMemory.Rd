@@ -14,15 +14,21 @@ Memory class for storing conversation history with a size limit
 \itemize{
 \item \href{#method-LimitedConversationMemory-new}{\code{LimitedConversationMemory$new()}}
 \item \href{#method-LimitedConversationMemory-add_message}{\code{LimitedConversationMemory$add_message()}}
+\item \href{#method-LimitedConversationMemory-set_preserve_pairs}{\code{LimitedConversationMemory$set_preserve_pairs()}}
+\item \href{#method-LimitedConversationMemory-get_max_messages}{\code{LimitedConversationMemory$get_max_messages()}}
+\item \href{#method-LimitedConversationMemory-set_max_messages}{\code{LimitedConversationMemory$set_max_messages()}}
+\item \href{#method-LimitedConversationMemory-as_data_frame}{\code{LimitedConversationMemory$as_data_frame()}}
 \item \href{#method-LimitedConversationMemory-clone}{\code{LimitedConversationMemory$clone()}}
 }
 }
 \if{html}{\out{
-<details open><summary>Inherited methods</summary>
+<details><summary>Inherited methods</summary>
 <ul>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="add_entry"><a href='../../aigenflow/html/Memory.html#method-Memory-add_entry'><code>aigenflow::Memory$add_entry()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="clear_memory"><a href='../../aigenflow/html/Memory.html#method-Memory-clear_memory'><code>aigenflow::Memory$clear_memory()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="count"><a href='../../aigenflow/html/Memory.html#method-Memory-count'><code>aigenflow::Memory$count()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="Memory" data-id="get_memory"><a href='../../aigenflow/html/Memory.html#method-Memory-get_memory'><code>aigenflow::Memory$get_memory()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="aigenflow" data-topic="ConversationMemory" data-id="get_messages_by_role"><a href='../../aigenflow/html/ConversationMemory.html#method-ConversationMemory-get_messages_by_role'><code>aigenflow::ConversationMemory$get_messages_by_role()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="aigenflow" data-topic="ConversationMemory" data-id="get_recent_messages"><a href='../../aigenflow/html/ConversationMemory.html#method-ConversationMemory-get_recent_messages'><code>aigenflow::ConversationMemory$get_recent_messages()</code></a></span></li>
 </ul>
 </details>
@@ -48,7 +54,7 @@ Initialize memory with size limit
 \if{html}{\out{<a id="method-LimitedConversationMemory-add_message"></a>}}
 \if{latex}{\out{\hypertarget{method-LimitedConversationMemory-add_message}{}}}
 \subsection{Method \code{add_message()}}{
-Add a message while respecting size limit
+Add a message while respecting size limit with intelligent preservation
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{LimitedConversationMemory$add_message(role, content)}\if{html}{\out{</div>}}
 }
@@ -59,6 +65,67 @@ Add a message while respecting size limit
 \item{\code{role}}{The role of the message sender}
 
 \item{\code{content}}{The message content}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LimitedConversationMemory-set_preserve_pairs"></a>}}
+\if{latex}{\out{\hypertarget{method-LimitedConversationMemory-set_preserve_pairs}{}}}
+\subsection{Method \code{set_preserve_pairs()}}{
+Set pair preservation mode
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LimitedConversationMemory$set_preserve_pairs(preserve = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{preserve}}{Whether to preserve user-assistant pairs}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LimitedConversationMemory-get_max_messages"></a>}}
+\if{latex}{\out{\hypertarget{method-LimitedConversationMemory-get_max_messages}{}}}
+\subsection{Method \code{get_max_messages()}}{
+Get maximum messages setting
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LimitedConversationMemory$get_max_messages()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LimitedConversationMemory-set_max_messages"></a>}}
+\if{latex}{\out{\hypertarget{method-LimitedConversationMemory-set_max_messages}{}}}
+\subsection{Method \code{set_max_messages()}}{
+Change the maximum messages limit
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LimitedConversationMemory$set_max_messages(new_max)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{new_max}}{New maximum message count}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LimitedConversationMemory-as_data_frame"></a>}}
+\if{latex}{\out{\hypertarget{method-LimitedConversationMemory-as_data_frame}{}}}
+\subsection{Method \code{as_data_frame()}}{
+Export memory as data frame
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LimitedConversationMemory$as_data_frame(include_timestamps = FALSE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{include_timestamps}}{Whether to include timestamps}
 }
 \if{html}{\out{</div>}}
 }
