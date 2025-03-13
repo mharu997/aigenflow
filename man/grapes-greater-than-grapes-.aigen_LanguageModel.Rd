@@ -2,10 +2,12 @@
 % Please edit documentation in R/utils.R
 \name{\%>\%.aigen_LanguageModel}
 \alias{\%>\%.aigen_LanguageModel}
-\title{Enable piping for AI models, agents, and data}
+\title{Enable piping for AI models, agents, and data
+Make models pipe-friendly}
 \usage{
 `\%>\%.aigen_LanguageModel`(model, f, ...)
 }
 \description{
 Enable piping for AI models, agents, and data
+Make models pipe-friendly
 }

@@ -7,7 +7,7 @@
 Implements functionality specific to Anthropic Claude models.
 }
 \section{Super class}{
-\code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_AnthropicModel}
+\code{aigenflow::aigen_LanguageModel} -> \code{aigen_AnthropicModel}
 }
 \section{Methods}{
 \subsection{Public methods}{

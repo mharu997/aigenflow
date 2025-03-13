@@ -8,7 +8,7 @@ Base class for Azure ML Endpoint models supporting various model types
 }
 \keyword{internal}
 \section{Super class}{
-\code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_AzureMLEndpointModel}
+\code{aigenflow::aigen_LanguageModel} -> \code{aigen_AzureMLEndpointModel}
 }
 \section{Methods}{
 \subsection{Public methods}{

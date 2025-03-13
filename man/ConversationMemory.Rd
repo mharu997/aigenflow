@@ -7,7 +7,7 @@
 Memory class for store and manage conversation history.
 }
 \section{Super class}{
-\code{\link[aigenflow:Memory]{aigenflow::Memory}} -> \code{ConversationMemory}
+\code{aigenflow::Memory} -> \code{ConversationMemory}
 }
 \section{Methods}{
 \subsection{Public methods}{

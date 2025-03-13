@@ -372,7 +372,6 @@ add_tools <- function(agent, tools, tools_env = parent.frame()) {
 ####################################################
 
 #' Enable piping for AI models, agents, and data
-#' @importFrom magrittr %>%
 #' Make models pipe-friendly
 #' @private
 `%>%.aigen_LanguageModel` <- function(model, f, ...) {
@@ -599,12 +598,13 @@ CreateFlow <- function(agents = list(), workflows = list()) {
     if (!is.list(config) || is.null(config$model)) {
       stop(sprintf("Invalid configuration for agent '%s'", name))
     }
-    
     Agent(
       model = config$model,
       name = name,
-      memory = config$memory,
-      tools = config$tools
+      short_term_memory = config$memory,
+      tools = config$tools,
+      debug_mode = F,
+      enable_react = TRUE
     )
   })
   names(agent_instances) <- names(agents)
@@ -729,188 +729,6 @@ analyze_data <- function(data) {
   })
   
   return(paste(result, collapse = "\n"))
-}
-
-#' Generate a comprehensive, research-grade data analysis report
-#' 
-#' @description 
-#' Creates a detailed, publication-quality report from data analysis, incorporating
-#' rigorous statistical analysis, expert interpretation, and clear communication.
-#' The function employs specialized AI agents to conduct thorough analysis,
-#' interpret findings, and present results with academic rigor while maintaining
-#' accessibility.
-#' 
-#' @param model An instance of LanguageModel
-#' @param data A data frame or matrix to analyze
-#' @param data_question Specific question or focus for the analysis
-#' @param system_prompt Instructions for the analytical approach
-#' @param output_format Output format ("text" or "markdown", default: "markdown")
-#' 
-#' @return A list containing:
-#'   \item{raw_analysis}{Detailed statistical analysis with comprehensive metrics}
-#'   \item{interpretation}{Expert interpretation with statistical significance}
-#'   \item{final_report}{Clear, structured report with key findings}
-#'   \item{metadata}{Analysis metadata including timestamps and parameters}
-#' 
-aigen_report <- function(model, 
-                         data, 
-                         data_question = "What are the key insights from this data?",
-                         system_prompt = NULL,
-                         output_format = "markdown") {
-  
-  # Input validation
-  if (!inherits(model, "aigen_LanguageModel")) {
-    stop("'model' must be an instance of aigen_LanguageModel")
-  }
-  if (!is.data.frame(data) && !is.matrix(data)) {
-    stop("'data' must be a data frame or matrix")
-  }
-  
-  # Enhanced metadata capturing
-  metadata <- list(
-    timestamp = Sys.time(),
-    data_dimensions = dim(data),
-    data_columns = colnames(data),
-    column_types = sapply(data, class),
-    missing_data = colSums(is.na(data)),
-    question = data_question,
-    data_summary = summary(data),
-    analysis_parameters = list(
-      system_prompt = system_prompt,
-      output_format = output_format
-    )
-  )
-  
-  # Initialize analysis agent with enhanced tools
-  data_agent <- aigen_Agent$new(
-    model = model,
-    tools = list(
-      analyze = analyze_data,
-      summarize = summary,
-      correlate = cor
-    )
-  )
-  
-  # Detailed statistical analysis with enhanced context
-  raw_analysis <- tryCatch({
-    data_agent$use_tool("analyze", data)
-  }, error = function(e) {
-    stop("Statistical analysis failed: ", e$message)
-  })
-  
-  # Expert interpretation with research focus
-  interpretation_prompt <- paste(
-    "As a research statistician, analyze this dataset with academic rigor:\n\n",
-    raw_analysis,
-    "\n\nFocus your analysis on the following aspects:",
-    "\n1. Statistical Significance: Identify and explain significant patterns",
-    "\n2. Data Distribution: Analyze the distribution of key variables",
-    "\n3. Relationships: Examine correlations and potential causal relationships",
-    "\n4. Anomalies: Identify and explain any outliers or unusual patterns",
-    "\n5. Limitations: Discuss any data limitations or potential biases",
-    "\n\nBased on these statistics and considering the question: ",
-    data_question
-  )
-  
-  interpretation <- data_agent$chat(
-    user_input = interpretation_prompt,
-    system_prompt = "You are a senior research statistician with expertise in data analysis. 
-    Provide a thorough, academically rigorous interpretation of the data. 
-    Focus on statistical significance, methodological soundness, and meaningful patterns. 
-    Be precise in your language and support conclusions with specific evidence from the data."
-  )
-  
-  # Enhanced report generation with structured output
-  report_prompt <- paste(
-    "Transform this technical analysis into a clear, comprehensive report:\n\n",
-    interpretation,
-    "\n\nStructure the report as follows:",
-    "\n1. Executive Summary (4-5 sentence paragraph of key findings)",
-    "\n2. Methodology & Data Overview",
-    "\n3. Key Findings",
-    "  - Primary Insights (statistically significant findings)",
-    "  - Secondary Observations (interesting patterns)",
-    "  - Data Relationships (correlations and potential causations)",
-    "\n4. Limitations & Considerations",
-    "\n5. Actionable Insights & Recommendations",
-    "\n\nEnsure the report is:",
-    "- Precise and evidence-based",
-    "- Free of unnecessary jargon",
-    "- Focused on meaningful insights",
-    "- Actionable for decision-making"
-  )
-  
-  writer_agent <- aigen_Agent$new(model = model)
-  final_report <- writer_agent$chat(
-    user_input = report_prompt,
-    system_prompt = "You are an expert research communicator with a deep understanding of 
-    statistical analysis and scientific writing. Your goal is to translate complex 
-    technical findings into clear, actionable insights while maintaining scientific 
-    rigor. Focus on precision, clarity, and meaningful interpretation of the data. 
-    Avoid speculation and unsupported conclusions. Structure your writing to be 
-    both academically sound and practically useful."
-  )
-  
-  # Add execution time and analysis quality metrics to metadata
-  metadata$execution_time <- difftime(Sys.time(), metadata$timestamp, units = "secs")
-  metadata$analysis_coverage <- list(
-    variables_analyzed = length(metadata$column_types),
-    missing_data_handled = any(metadata$missing_data > 0),
-    correlation_analysis = "correlate" %in% names(data_agent$tools)
-  )
-  
-  # Create and return enhanced report object
-  structure(
-    list(
-      raw_analysis = raw_analysis,
-      interpretation = interpretation,
-      final_report = final_report,
-      metadata = metadata
-    ),
-    class = "aigen_report"
-  )
-}
-
-#' Print method for aigen_report objects with enhanced formatting
-#' @export
-print.aigen_report <- function(x, ...) {
-  cat("\n=== Research Analysis Report ===\n")
-  cat("\nAnalysis Generated:", format(x$metadata$timestamp))
-  cat("\nExecution Time:", round(x$metadata$execution_time, 2), "seconds")
-  cat("\nData Dimensions:", paste(x$metadata$data_dimensions, collapse = " x "))
-  cat("\n\n=== Executive Summary ===\n\n")
-  
-  # Extract and print executive summary (first paragraph of final report)
-  summary_lines <- strsplit(x$final_report, "\n")[[1]]
-  exec_summary <- summary_lines[which(nchar(summary_lines) > 0)[1]]
-  cat(exec_summary)
-  
-  cat("\n\n=== Full Report ===\n\n")
-  cat(x$final_report)
-  
-  cat("\n\nUse $raw_analysis, $interpretation, or $final_report to access specific components.\n")
-}
-
-#' Enhanced summary method for aigen_report objects
-#' @export
-summary.aigen_report <- function(object, ...) {
-  cat("\n=== Analysis Overview ===\n")
-  cat("\nAnalysis Parameters:")
-  cat("\n- Data Dimensions:", paste(object$metadata$data_dimensions, collapse = " x"))
-  cat("\n- Variables Analyzed:", length(object$metadata$column_types))
-  cat("\n- Analysis Question:", object$metadata$question)
-  cat("\n- Execution Time:", format(object$metadata$execution_time))
-  
-  cat("\n\nData Quality Metrics:")
-  cat("\n- Missing Data Present:", any(object$metadata$missing_data > 0))
-  cat("\n- Column Types:", paste(unique(object$metadata$column_types), collapse = ", "))
-  
-  cat("\n\nReport Components:")
-  cat("\n1. Raw Analysis:", nchar(object$raw_analysis), "characters")
-  cat("\n2. Expert Interpretation:", nchar(object$interpretation), "characters")
-  cat("\n3. Final Report:", nchar(object$final_report), "characters")
-  
-  cat("\n\nUse print() for full report or access components directly.\n")
 }
 
 ########################################

@@ -7,7 +7,7 @@
 Implements functionality specific to Azure OpenAI models.
 }
 \section{Super class}{
-\code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_AzureOpenAIModel}
+\code{aigenflow::aigen_LanguageModel} -> \code{aigen_AzureOpenAIModel}
 }
 \section{Methods}{
 \subsection{Public methods}{

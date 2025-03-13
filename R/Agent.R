@@ -6,7 +6,9 @@ library("logger")
 
 # Set up parallel processing
 plan("multisession")
-
+#' @title Agent Class
+#' @description Base class for defining LLM Agents.
+#' @private
 aigen_Agent <- R6Class(
   "aigen_Agent",
   

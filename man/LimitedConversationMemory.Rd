@@ -7,7 +7,7 @@
 Memory class for storing conversation history with a size limit
 }
 \section{Super classes}{
-\code{\link[aigenflow:Memory]{aigenflow::Memory}} -> \code{\link[aigenflow:ConversationMemory]{aigenflow::ConversationMemory}} -> \code{LimitedConversationMemory}
+\code{aigenflow::Memory} -> \code{aigenflow::ConversationMemory} -> \code{LimitedConversationMemory}
 }
 \section{Methods}{
 \subsection{Public methods}{

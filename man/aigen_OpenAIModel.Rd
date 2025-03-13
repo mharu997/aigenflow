@@ -7,7 +7,7 @@
 Implements functionality specific to OpenAI language models with support for preview models
 }
 \section{Super class}{
-\code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_OpenAIModel}
+\code{aigenflow::aigen_LanguageModel} -> \code{aigen_OpenAIModel}
 }
 \section{Methods}{
 \subsection{Public methods}{

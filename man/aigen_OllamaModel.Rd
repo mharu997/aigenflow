@@ -7,7 +7,7 @@
 Implements functionality for local LLMs using Ollama
 }
 \section{Super class}{
-\code{\link[aigenflow:aigen_LanguageModel]{aigenflow::aigen_LanguageModel}} -> \code{aigen_OllamaModel}
+\code{aigenflow::aigen_LanguageModel} -> \code{aigen_OllamaModel}
 }
 \section{Methods}{
 \subsection{Public methods}{
